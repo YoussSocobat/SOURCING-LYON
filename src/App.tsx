@@ -20,14 +20,6 @@ const TARGETS = [
   { id:15, name:"Volago", secteur:"Mode éco-responsable", site:"volago.fr", ville:"Lyon", taille:"2–10 sal.", tag:"⚡ À explorer", pertinence:"Early stage mode durable. Offre BizDev publiée. Accès direct co-fondateurs.", contacts:[{nom:"Co-fondateurs",poste:"CEO",linkedin:"https://www.linkedin.com/company/volago",emails:[{addr:"contact@volago.fr",score:"🔴",note:"Décideur à confirmer"}]}], emailsEntreprise:[{addr:"contact@volago.fr",score:"🟡",note:"Email principal probable"}], canal:"LinkedIn", moment:"Lun–Mar, 10h–12h", offreActive:true },
 ];
 
-const ALERTS = [
-  { platform:"La Bonne Alternance", icon:"🏛️", freq:"Temps réel", url:"https://labonnealternance.apprentissage.beta.gouv.fr/recherche-emploi?romes=M1702,M1703,M1705,M1706&lat=45.75&lon=4.85&radius=30&caller=charid-dashboard", steps:["Ouvre le lien → Crée un compte gratuit","Clique sur 🔔 en haut à droite","Nomme l'alerte 'Business Dev Growth Lyon'"] },
-  { platform:"Indeed", icon:"🔵", freq:"Email quotidien", alertUrl:"https://fr.indeed.com/create-email-alert?q=alternance+business+developer+growth&l=Lyon&radius=30", url:"https://fr.indeed.com/jobs?q=alternance+business+developer+growth+marketing&l=Lyon&fromage=7&sort=date", steps:["Effectue la recherche","Scroll en bas → 'Recevoir les nouvelles offres par e-mail'","Fréquence : quotidienne"] },
-  { platform:"Hellowork", icon:"🟠", freq:"Email quotidien", url:"https://www.hellowork.com/fr-fr/alternance/metier_business-developer-ville_lyon-69000.html", steps:["Ouvre le lien","Clique sur 'Créer une alerte' en bas de page","Entre ton email → nouvelles offres dès publication"] },
-  { platform:"LinkedIn", icon:"💼", freq:"Push + email", alertUrl:"https://www.linkedin.com/jobs/search/?keywords=alternance+business+developer+growth&location=Lyon&f_JT=I&sortBy=DD", url:"https://www.linkedin.com/jobs/search/?keywords=alternance+business+developer+growth&location=Lyon&f_JT=I&sortBy=DD", steps:["Effectue la recherche → Toggle '🔔 Alertes emploi'","Fréquence : quotidienne","Active les notifs mobile pour être le premier"] },
-  { platform:"Welcome to the Jungle", icon:"🌿", freq:"Email hebdo", url:"https://www.welcometothejungle.com/fr/jobs?aroundQuery=Lyon&refinementList%5Bcontract_type%5D%5B%5D=APPRENTICESHIP&query=business+developer+growth", steps:["Crée un compte gratuit","Lance la recherche → 🔔 'Créer une alerte'","Offres exclusives startups non publiées ailleurs"] },
-];
-
 const SCRAPE_QUERIES = [
   "agence marketing digital Lyon recrutement",
   "startup SaaS Lyon croissance 2025",
@@ -57,7 +49,6 @@ export default function App() {
   const [copied, setCopied] = useState<string | null>(null);
   const [applied, setApplied] = useState<Record<number, boolean>>({});
   const [saved, setSaved] = useState<Record<number, boolean>>({});
-  const [openAlert, setOpenAlert] = useState<number | null>(null);
 
   // Live offers
   const [offers, setOffers] = useState<any[]>([]);
@@ -95,21 +86,85 @@ export default function App() {
     setLoadingOffers(true);
     setApiError(null);
     try {
-      const text = await callGemini(
-        `Tu es un assistant expert en recrutement. UTILISE GOOGLE SEARCH pour trouver des offres d'alternance RÉELLES et ACTUELLES (publiées il y a moins de 15 jours) pour les postes de Business Developer, Growth Marketing ou Commercial BtoB à Lyon et sa région (rayon ${radius}km).
+      const prompt = `Tu es un assistant expert en recrutement et sourcing. UTILISE GOOGLE SEARCH pour trouver des offres d'alternance RÉELLES et ACTUELLES (publiées il y a moins de 15 jours) pour Charid Youssef (étudiant Master INSEEC Lyon).
 
-IMPORTANT : Pour chaque offre, cherche activement l'adresse email directe du recruteur ou du responsable (ex: rh@, jobs@, ou prenom.nom@entreprise.com). Ne fournis l'email que s'il est mentionné sur l'offre ou sur le site carrière de l'entreprise (100% sûr).
+DOMAINES CIBLÉS : Business Developer, Growth Marketing, Digital Marketing, E-commerce, Commercial B2B.
+COMPÉTENCES CLÉS : Meta Ads, Google Ads, SEO/SEA, Emailing (Brevo), IA générative, Automation (n8n).
+LIEU : Lyon et sa région (rayon ${radius}km).
 
-Retourne UNIQUEMENT ce JSON :
-{"offres":[{"titre":"","entreprise":"","ville":"","contrat":"Alternance","salaire":"","description":"","date":"YYYY-MM-DD","url":"LIEN_REEL","email":"EMAIL_VERIFIE_UNIQUEMENT","source":"NOM_DU_SITE"}]}
+CRITÈRES EXCLUSIFS (TRÈS IMPORTANT) :
+- EXCLURE TOUTES LES ÉCOLES et centres de formation.
+- Cherche sur TOUS les sites : Indeed, Hellowork, La Bonne Alternance, LinkedIn, Welcome to the Jungle, sites carrières.
+- Trouve au moins 12-15 offres distinctes.
 
-Si aucun email n'est trouvé pour une offre, laisse le champ "email" vide.`,
-        true
-      );
+IMPORTANT (EFFORT MAXIMUM REQUIS) : Pour CHAQUE offre, tu DOIS faire un effort particulier pour trouver l'adresse email directe du recruteur ou du responsable. 
+- Cherche sur la page de l'offre, mais aussi sur le site carrière de l'entreprise.
+- Si l'email n'est pas sur l'annonce, essaie de déduire l'email du responsable RH ou du CEO (ex: rh@entreprise.com, jobs@, ou prenom.nom@).
+- Indique l'email uniquement si tu as une forte présomption de validité.
+
+Retourne UNIQUEMENT ce JSON (aucun autre texte, aucune explication) :
+{"offres":[{"titre":"","entreprise":"","ville":"","contrat":"Alternance","salaire":"","description":"","date":"YYYY-MM-DD","url":"LIEN_REEL","email":"EMAIL_TROUVE_OU_PROBABLE","source":"NOM_DU_SITE"}]}
+
+Si aucun email n'est trouvé malgré tes recherches, laisse le champ "email" vide.`;
+
+      const text = await callGemini(prompt, true);
       const parsed = parseJSON(text);
-      const offres = Array.isArray(parsed) ? parsed : (parsed.offres || []);
-      if (!offres.length) throw new Error("Aucune offre réelle trouvée pour le moment.");
-      setOffers(offres);
+      let newOffres = [];
+      if (Array.isArray(parsed)) {
+        newOffres = parsed;
+      } else if (parsed && typeof parsed === 'object') {
+        newOffres = parsed.offres || parsed.offers || [];
+      }
+      
+      if (!newOffres.length) throw new Error("Aucune offre réelle trouvée pour le moment.");
+      
+      // Add offers with emails to dynamicTargets
+      const offersWithEmails = newOffres.filter(o => o.email && o.email.includes("@"));
+      if (offersWithEmails.length > 0) {
+        const targetsFromOffers = offersWithEmails.map((o: any, idx: number) => ({
+          id: `off-${Date.now()}-${idx}`,
+          name: o.entreprise,
+          secteur: o.titre,
+          site: o.url,
+          ville: o.ville,
+          taille: "N/A",
+          tag: "📡 Offre Live",
+          pertinence: `Source: ${o.source}`,
+          contacts: [{
+            nom: "Responsable Recrutement",
+            poste: "RH / Manager",
+            linkedin: "#",
+            emails: [{ addr: o.email, score: "🟢", note: "Trouvé sur l'offre" }]
+          }],
+          emailsEntreprise: [],
+          canal: "Email",
+          moment: "Matin",
+          offreActive: true
+        }));
+
+        setDynamicTargets(prev => {
+          const combined = [...targetsFromOffers, ...prev];
+          const seen = new Set();
+          return combined.filter(t => {
+            const email = t.contacts[0]?.emails[0]?.addr;
+            if (!email || seen.has(email)) return false;
+            seen.add(email);
+            return true;
+          }).slice(0, 100);
+        });
+      }
+
+      setOffers(prev => {
+        const combined = [...newOffres, ...prev];
+        // Deduplicate by URL
+        const seen = new Set();
+        return combined.filter(o => {
+          if (!o.url || seen.has(o.url)) return false;
+          seen.add(o.url);
+          return true;
+        }).slice(0, 100); // Keep last 100
+      });
+
       setLastRefresh(new Date());
       setCooldown(15);
     } catch (e: any) {
@@ -134,12 +189,18 @@ Si aucun email n'est trouvé pour une offre, laisse le champ "email" vide.`,
         `Recherche des entreprises réelles à Lyon via Google Search pour ces catégories : ${queries}.
 Identifie les décideurs (CEO, Head of Growth, Marketing) et leurs emails probables.
 
-Retourne UNIQUEMENT ce JSON :
+Retourne UNIQUEMENT ce JSON (aucun autre texte) :
 {"contacts":[{"entreprise":"","site":"","ville":"Lyon","decideur":"Nom","poste":"Poste","email_probable":"email","email_format":"format","score":"🟢","score_label":"Fiable","source":"Source","note":"Note"}]}`,
         true
       );
       const parsed = parseJSON(text);
-      const contacts = Array.isArray(parsed) ? parsed : (parsed.contacts || []);
+      let contacts = [];
+      if (Array.isArray(parsed)) {
+        contacts = parsed;
+      } else if (parsed && typeof parsed === 'object') {
+        contacts = parsed.contacts || [];
+      }
+      
       if (!contacts.length) throw new Error("Aucun contact trouvé");
       
       // Add to dynamic targets
@@ -180,18 +241,22 @@ Retourne UNIQUEMENT ce JSON :
     try {
       const prompt = `Génère un email de prospection simple et direct pour une recherche d'alternance.
 Destinataire : ${contact.nom} (${contact.poste}) chez ${company.name}.
-Expéditeur : Charid Youssef, étudiant en Master Business Dev & Growth à l'INSEEC Lyon (dispo Octobre 2026).
-Compétences : Meta Ads, Emailing (Brevo), IA générative, Growth Outbound.
+Expéditeur : Charid Youssef, étudiant en Master Business Dev & Growth Strategy à l'INSEEC Lyon (dispo Octobre 2026).
+
+CONTEXTE CV :
+- Expérience : Assistant Digital chez Socobat (Meta/Google Ads, SEO, Emailing Brevo) + BizDev chez EMSP (Prospection B2B, CRM).
+- Compétences : Growth Strategy, Automation (n8n), IA Appliquée (Agents, Prompting), Digital Marketing.
+- Langues : Anglais C2, Italien Maternel, Arabe Bilingue.
 
 L'email doit :
-1. Être très simple et authentique.
-2. Expliquer brièvement ce que je fais.
-3. Préciser que je cherche une alternance.
+1. Être très simple, authentique et percutant.
+2. Mentionner brièvement mon expertise en Growth/Digital (Ads, SEO, IA) et mon parcours à l'INSEEC.
+3. Préciser la recherche d'alternance pour Octobre 2026.
 4. Mentionner que mon CV est joint en pièce jointe (PJ).
-5. Demander un court échange.
+5. Demander un court échange (téléphone ou café).
 
 Retourne UNIQUEMENT ce JSON :
-{"objet": "Sujet simple", "corps": "Contenu de l'email \\n"}`;
+{"objet": "Sujet simple et accrocheur", "corps": "Contenu de l'email \\n"}`;
 
       const text = await callGemini(prompt, false); // No search needed for simple draft
       const parsed = parseJSON(text);
@@ -252,7 +317,6 @@ Retourne UNIQUEMENT ce JSON :
           <NavBtn k="offres" label="📡 Offres Live" count={filteredOffers.length||null} countBg="#dc2626" />
           <NavBtn k="sourcing" label="🎯 Sourcing" count={TARGETS.length + dynamicTargets.length} countBg="#374151" />
           <NavBtn k="emails" label="📧 Emails" count={(dynamicTargets.length + TARGETS.reduce((acc, t) => acc + t.contacts.reduce((a, c) => a + c.emails.length, 0), 0)) || null} countBg="#7c3aed" />
-          <NavBtn k="alertes" label="🔔 Alertes" count={ALERTS.length} countBg="#15803d" />
         </div>
         <div style={{ display:"flex", gap:14, fontSize:11, color:"#52525b" }}>
           {lastRefresh && <span>🕐 {lastRefresh.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</span>}
@@ -608,53 +672,6 @@ Retourne UNIQUEMENT ce JSON :
         </div>
       )}
 
-      {/* ══ ALERTES ══ */}
-      {view === "alertes" && (
-        <div style={{ flex:1, overflowY:"auto", padding:20, maxWidth:660, margin:"0 auto", width:"100%" }}>
-          <h2 style={{ fontSize:18, fontWeight:700, color:"#fff", margin:"0 0 4px" }}>🔔 Configure tes alertes — zéro offre ratée</h2>
-          <p style={{ fontSize:13, color:"#71717a", margin:"0 0 18px" }}>Active chacune des 5 plateformes pour couvrir 100% du marché.</p>
-          <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
-            {ALERTS.map((a,i)=>{
-              const isOpen = openAlert===i;
-              return (
-                <div key={i} style={{ background:"#18181b", border:"1px solid "+(isOpen?"#3f3f46":"#27272a"), borderRadius:12, overflow:"hidden" }}>
-                  <button onClick={()=>setOpenAlert(isOpen?null:i)}
-                    style={{ width:"100%", padding:"13px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", background:"none", border:"none", cursor:"pointer", textAlign:"left" }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                      <span style={{ fontSize:20 }}>{a.icon}</span>
-                      <div>
-                        <div style={{ fontWeight:700, fontSize:14, color:"#fff" }}>{a.platform}</div>
-                        <div style={{ fontSize:11, color:"#71717a" }}>{a.freq}</div>
-                      </div>
-                    </div>
-                    <span style={{ color:"#52525b", fontSize:12 }}>{isOpen?"▲":"▼"}</span>
-                  </button>
-                  {isOpen&&(
-                    <div style={{ padding:"0 16px 16px", borderTop:"1px solid #27272a" }}>
-                      <div style={{ paddingTop:12, display:"flex", flexDirection:"column", gap:7, marginBottom:12 }}>
-                        {a.steps.map((step,si)=>(
-                          <div key={si} style={{ display:"flex", alignItems:"flex-start", gap:8, fontSize:13, color:"#cbd5e1" }}>
-                            <span style={{ flexShrink:0, width:19, height:19, borderRadius:"50%", background:"#27272a", border:"1px solid #3f3f46", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, color:"#a1a1aa" }}>{si+1}</span>
-                            <span>{step}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                        <a href={a.url} target="_blank" rel="noreferrer" style={{ flex:1, textAlign:"center", padding:"8px 14px", borderRadius:8, fontSize:12, fontWeight:600, textDecoration:"none", background:"#27272a", color:"#e4e4e7", border:"1px solid #3f3f46" }}>🌐 Ouvrir</a>
-                        {a.alertUrl&&<a href={a.alertUrl} target="_blank" rel="noreferrer" style={{ flex:1, textAlign:"center", padding:"8px 14px", borderRadius:8, fontSize:12, fontWeight:600, textDecoration:"none", background:"#1d4ed8", color:"#fff", border:"1px solid #2563eb" }}>🔔 Créer l'alerte</a>}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ marginTop:14, background:"#0a0a0b", border:"1px solid #27272a", borderRadius:10, padding:14, fontSize:12, color:"#71717a", lineHeight:1.7 }}>
-            <span style={{ color:"#a1a1aa", fontWeight:600 }}>💡 Stratégie · </span>
-            Indeed agrège toutes les sources. LinkedIn = startups exclusives. La Bonne Alternance = agrégateur officiel 200k offres. Welcome to the Jungle = offres non publiées ailleurs. Configure-les TOUTES pour ne rien rater.
-          </div>
-        </div>
-      )}
     </div>
   );
 }
