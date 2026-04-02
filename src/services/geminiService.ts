@@ -32,6 +32,30 @@ export async function callGemini(prompt: string, useSearch = false) {
   }
 }
 
+export async function generateApplicationEmail(jobTitle: string, company: string, description: string) {
+  const prompt = `Tu es Charid Youssef, étudiant en Master à l'INSEEC Lyon, spécialisé en Digital Marketing, E-commerce et Growth.
+Écris un email de candidature court, percutant et personnalisé pour le poste de "${jobTitle}" chez "${company}".
+
+CONTEXTE DE L'OFFRE :
+${description}
+
+TES POINTS FORTS :
+- Expertise Meta Ads / Google Ads.
+- Maîtrise de l'Automation (n8n) et de l'IA générative.
+- Expérience en Growth Marketing.
+
+L'email doit être professionnel, montrer que tu as compris les besoins de l'entreprise et proposer un échange.
+Ne mets pas d'objet (je le générerai séparément).
+Commence par "Bonjour [Nom du recruteur ou Responsable Recrutement]," et termine par "Cordialement, Charid Youssef".
+
+Retourne UNIQUEMENT le corps de l'email.`;
+
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: prompt,
+  });
+  return response.text;
+}
 export function parseJSON(text: string) {
   const cleaned = text.trim();
   try {

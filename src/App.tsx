@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect } from "react";
-import { callGemini, parseJSON } from "./services/geminiService";
+import { useState, useCallback, useEffect, ChangeEvent } from "react";
+import { Mail, FileText, Info, ExternalLink, CheckCircle, Send, Loader2 } from "lucide-react";
+import { callGemini, parseJSON, generateApplicationEmail } from "./services/geminiService";
 
 // ─── SOURCING DATA ─────────────────────────────────────────────────────────────
 const TARGETS = [
@@ -70,15 +71,108 @@ export default function App() {
   const [loadingDraft, setLoadingDraft] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
 
-  // Cooldown for API calls
+  // Gmail & CV Management
+  const [gmailConnected, setGmailConnected] = useState(false);
+  const [cvFile, setCvFile] = useState<string | null>(null);
+  const [sendingAppId, setSendingAppId] = useState<string | number | null>(null);
+  const [appStatus, setAppStatus] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
 
+  // Check Gmail status on load
   useEffect(() => {
-    if (cooldown > 0) {
-      const timer = setTimeout(() => setCooldown(cooldown - 1), 1000);
-      return () => clearTimeout(timer);
+    fetch('/api/auth/status')
+      .then(res => res.json())
+      .then(data => setGmailConnected(data.connected))
+      .catch(() => setGmailConnected(false));
+  }, []);
+
+  // Listen for OAuth success
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        setGmailConnected(true);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  const handleConnectGmail = async () => {
+    try {
+      const res = await fetch('/api/auth/google/url');
+      const { url } = await res.json();
+      window.open(url, 'google_auth', 'width=600,height=700');
+    } catch (e) {
+      console.error('Failed to get auth URL', e);
     }
-  }, [cooldown]);
+  };
+
+  const handleLogoutGmail = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    setGmailConnected(false);
+  };
+
+  const handleUploadCV = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const formData = new FormData();
+    formData.append('cv', file);
+    
+    try {
+      const res = await fetch('/api/upload-cv', {
+        method: 'POST',
+        body: formData
+      });
+      if (res.ok) {
+        setCvFile(file.name);
+      }
+    } catch (e) {
+      console.error('Upload failed', e);
+    }
+  };
+
+  const handleSendApplication = async (target: any, emailAddr: string) => {
+    if (!gmailConnected) return alert("Connecte ton Gmail d'abord !");
+    setSendingAppId(target.id);
+    setAppStatus("Génération de l'email...");
+    
+    try {
+      // 1. Generate Email with Gemini
+      const jobTitle = target.titre || target.secteur || "Alternant Marketing Digital";
+      const company = target.entreprise || target.name;
+      const description = target.description || target.pertinence || "";
+      
+      const body = await generateApplicationEmail(jobTitle, company, description);
+      const subject = `Candidature Alternance - ${jobTitle} - Charid Youssef`;
+      
+      setAppStatus("Envoi de l'email via Gmail...");
+      
+      // 2. Send via Gmail API
+      const res = await fetch('/api/send-application', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: emailAddr,
+          subject,
+          body
+        })
+      });
+      
+      if (res.ok) {
+        setApplied(prev => ({ ...prev, [target.id]: true }));
+        setAppStatus("Candidature envoyée avec succès !");
+        setTimeout(() => setAppStatus(null), 3000);
+      } else {
+        throw new Error("Erreur lors de l'envoi");
+      }
+    } catch (e: any) {
+      setAppStatus(`Erreur: ${e.message}`);
+      setTimeout(() => setAppStatus(null), 5000);
+    } finally {
+      setSendingAppId(null);
+    }
+  };
 
   // ── FETCH OFFERS ─────────────────────────────────────────────────────────────
   const fetchOffers = useCallback(async () => {
@@ -317,6 +411,7 @@ Retourne UNIQUEMENT ce JSON :
           <NavBtn k="offres" label="📡 Offres Live" count={filteredOffers.length||null} countBg="#dc2626" />
           <NavBtn k="sourcing" label="🎯 Sourcing" count={TARGETS.length + dynamicTargets.length} countBg="#374151" />
           <NavBtn k="emails" label="📧 Emails" count={(dynamicTargets.length + TARGETS.reduce((acc, t) => acc + t.contacts.reduce((a, c) => a + c.emails.length, 0), 0)) || null} countBg="#7c3aed" />
+          <NavBtn k="candidature" label="💼 Candidature" count={cvFile ? 1 : null} countBg="#2563eb" />
         </div>
         <div style={{ display:"flex", gap:14, fontSize:11, color:"#52525b" }}>
           {lastRefresh && <span>🕐 {lastRefresh.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</span>}
@@ -425,9 +520,30 @@ Retourne UNIQUEMENT ce JSON :
                         {o.email&&(
                           <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
                             <span style={{ fontSize: 9, color: "#4ade80", fontWeight: 700, textTransform: "uppercase" }}>Contact Direct :</span>
-                            <button onClick={()=>copy(o.email,"oe-"+i)} style={{ padding:"4px 12px", borderRadius:7, fontSize:11, cursor:"pointer", border:"1px solid #15803d", background:"#052e16", color:"#4ade80", fontFamily:"monospace", fontWeight: 600 }}>
-                              {copied==="oe-"+i?"✓ Copié":o.email}
-                            </button>
+                            <div style={{ display: "flex", gap: 4 }}>
+                              <button onClick={()=>copy(o.email,"oe-"+i)} style={{ padding:"4px 12px", borderRadius:7, fontSize:11, cursor:"pointer", border:"1px solid #15803d", background:"#052e16", color:"#4ade80", fontFamily:"monospace", fontWeight: 600 }}>
+                                {copied==="oe-"+i?"✓ Copié":o.email}
+                              </button>
+                              <button 
+                                onClick={() => handleSendApplication(o, o.email)}
+                                disabled={sendingAppId === o.id || !gmailConnected || !cvFile}
+                                style={{ 
+                                  padding:"4px 12px", 
+                                  borderRadius:7, 
+                                  fontSize:11, 
+                                  cursor:(sendingAppId === o.id || !gmailConnected || !cvFile) ? "not-allowed" : "pointer", 
+                                  border:"1px solid #2563eb", 
+                                  background:applied[o.id] ? "#1e3a8a" : "#2563eb", 
+                                  color:"#fff", 
+                                  fontWeight: 700,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 4
+                                }}
+                              >
+                                {sendingAppId === o.id ? "..." : applied[o.id] ? "✓ Envoyé" : "🚀 Postuler"}
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -449,6 +565,78 @@ Retourne UNIQUEMENT ce JSON :
         </div>
       )}
 
+      {/* ══ CANDIDATURE ══ */}
+      {view === "candidature" && (
+        <div style={{ flex:1, overflowY:"auto", padding:24 }}>
+          <div style={{ maxWidth:800, margin:"0 auto", display:"flex", flexDirection:"column", gap:24 }}>
+            <div style={{ background:"#18181b", border:"1px solid #27272a", borderRadius:16, padding:32, boxShadow:"0 20px 25px -5px rgba(0,0,0,0.1)" }}>
+              <h2 style={{ fontSize:24, fontWeight:800, marginBottom:24, display:"flex", alignItems:"center", gap:12 }}>
+                <div style={{ width:40, height:40, borderRadius:12, background:"rgba(37,99,235,0.15)", display:"flex", alignItems:"center", justifyContent:"center", color:"#3b82f6" }}>
+                  <Mail size={24} />
+                </div>
+                Configuration Candidature
+              </h2>
+              
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))", gap:32 }}>
+                {/* Gmail Connection */}
+                <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+                  <h3 style={{ fontSize:18, fontWeight:700, color:"#e4e4e7" }}>Connexion Gmail</h3>
+                  <p style={{ fontSize:13, color:"#71717a", lineHeight:1.5 }}>Connecte ton compte Gmail pour envoyer tes candidatures en un clic avec l'IA.</p>
+                  {gmailConnected ? (
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:16, background:"rgba(34,197,94,0.1)", border:"1px solid rgba(34,197,94,0.2)", borderRadius:12 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:12, color:"#4ade80", fontSize:14, fontWeight:600 }}>
+                        <div style={{ width:8, height:8, borderRadius:"50%", background:"#4ade80", animation:"pulse 2s infinite" }} />
+                        Gmail Connecté
+                      </div>
+                      <button onClick={handleLogoutGmail} style={{ fontSize:11, color:"#71717a", background:"none", border:"none", cursor:"pointer", textDecoration:"underline" }}>Déconnecter</button>
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={handleConnectGmail}
+                      style={{ width:"100%", padding:"14px", background:"#fff", color:"#000", fontWeight:800, borderRadius:12, border:"none", cursor:"pointer", transition:"all 0.2s", fontSize:14 }}
+                    >
+                      Connecter Gmail
+                    </button>
+                  )}
+                </div>
+
+                {/* CV Upload */}
+                <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+                  <h3 style={{ fontSize:18, fontWeight:700, color:"#e4e4e7" }}>Ton CV (PDF)</h3>
+                  <p style={{ fontSize:13, color:"#71717a", lineHeight:1.5 }}>Télécharge ton CV pour qu'il soit joint automatiquement à tes emails.</p>
+                  <div style={{ position:"relative" }}>
+                    <input 
+                      type="file" 
+                      accept=".pdf" 
+                      onChange={handleUploadCV}
+                      style={{ position:"absolute", inset:0, width:"100%", height:"100%", opacity:0, cursor:"pointer", zIndex:10 }}
+                    />
+                    <div style={{ padding:24, border:"2px dashed "+(cvFile ? "rgba(37,99,235,0.4)" : "rgba(255,255,255,0.1)"), background:cvFile ? "rgba(37,99,235,0.05)" : "transparent", borderRadius:12, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:10, transition:"all 0.2s" }}>
+                      <FileText size={28} color={cvFile ? "#3b82f6" : "#52525b"} />
+                      <span style={{ fontSize:13, fontWeight:600, color:cvFile ? "#3b82f6" : "#a1a1aa" }}>{cvFile || "Choisir un fichier PDF"}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ background:"rgba(37,99,235,0.1)", border:"1px solid rgba(37,99,235,0.2)", borderRadius:12, padding:16, display:"flex", gap:12 }}>
+              <Info size={20} color="#3b82f6" style={{ flexShrink:0, marginTop:2 }} />
+              <div style={{ fontSize:13, color:"#93c5fd", lineHeight:1.6 }}>
+                <strong>Comment ça marche ?</strong> Une fois configuré, un bouton <strong>🚀 Postuler</strong> apparaîtra sur chaque offre. 
+                L'IA rédigera un email personnalisé basé sur l'annonce et ton profil, puis l'enverra directement via ton Gmail avec ton CV en pièce jointe.
+              </div>
+            </div>
+
+            {appStatus && (
+              <div style={{ position:"fixed", bottom:24, right:24, background:"#18181b", border:"1px solid #27272a", padding:"16px 24px", borderRadius:12, boxShadow:"0 20px 25px -5px rgba(0,0,0,0.3)", display:"flex", alignItems:"center", gap:12, zIndex:100, animation:"slide-in-from-bottom-4 0.3s ease-out" }}>
+                <div style={{ width:8, height:8, borderRadius:"50%", background:"#3b82f6", animation:"pulse 2s infinite" }} />
+                <span style={{ fontSize:14, fontWeight:600 }}>{appStatus}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {/* ══ SOURCING ══ */}
       {view === "sourcing" && (
         <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
@@ -530,7 +718,18 @@ Retourne UNIQUEMENT ce JSON :
 
                 {/* Emails entreprise */}
                 <div style={{ background:"#18181b", border:"1px solid #27272a", borderRadius:10, padding:14 }}>
-                  <div style={{ fontSize:10, fontWeight:700, color:"#71717a", textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:10 }}>📬 Emails entreprise (génériques)</div>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                    <div style={{ fontSize:10, fontWeight:700, color:"#71717a", textTransform:"uppercase", letterSpacing:"0.08em" }}>📬 Emails entreprise (génériques)</div>
+                    {selected.emailsEntreprise.length > 0 && (
+                      <button 
+                        onClick={() => handleSendApplication(selected, selected.emailsEntreprise[0].addr)}
+                        disabled={sendingAppId === selected.id || !gmailConnected || !cvFile}
+                        style={{ padding:"4px 10px", borderRadius:6, fontSize:10, cursor:"pointer", border:"1px solid #2563eb", background:"#2563eb", color:"#fff", fontWeight:700 }}
+                      >
+                        🚀 Postuler (Générique)
+                      </button>
+                    )}
+                  </div>
                   <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
                     {selected.emailsEntreprise.map((e: any,i: number)=>(
                       <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", background:"#0a0a0b", borderRadius:8, padding:"8px 12px", gap:8 }}>
@@ -543,6 +742,13 @@ Retourne UNIQUEMENT ce JSON :
                           <button onClick={()=>copy(e.addr,"ent-"+selected.id+"-"+i)}
                             style={{ fontSize:10, padding:"3px 8px", borderRadius:5, cursor:"pointer", border:"1px solid #3f3f46", background:"transparent", color:"#a1a1aa" }}>
                             {copied==="ent-"+selected.id+"-"+i?"✓":"Copier"}
+                          </button>
+                          <button 
+                            onClick={() => handleSendApplication(selected, e.addr)}
+                            disabled={sendingAppId === selected.id || !gmailConnected || !cvFile}
+                            style={{ padding:"3px 8px", borderRadius:5, fontSize:10, cursor:"pointer", border:"1px solid #2563eb", background:"#2563eb", color:"#fff", fontWeight:700 }}
+                          >
+                            🚀 Postuler
                           </button>
                         </div>
                       </div>
@@ -576,6 +782,13 @@ Retourne UNIQUEMENT ce JSON :
                             <button onClick={()=>copy(e.addr,"c-"+selected.id+"-"+ci+"-"+ei)}
                               style={{ fontSize:10, padding:"3px 8px", borderRadius:5, cursor:"pointer", border:"1px solid #3f3f46", background:"transparent", color:"#a1a1aa" }}>
                               {copied==="c-"+selected.id+"-"+ci+"-"+ei?"✓":"Copier"}
+                            </button>
+                            <button 
+                              onClick={() => handleSendApplication(selected, e.addr)}
+                              disabled={sendingAppId === selected.id || !gmailConnected || !cvFile}
+                              style={{ padding:"3px 8px", borderRadius:5, fontSize:10, cursor:"pointer", border:"1px solid #2563eb", background:"#2563eb", color:"#fff", fontWeight:700 }}
+                            >
+                              🚀 Postuler
                             </button>
                           </div>
                         </div>
@@ -664,6 +877,13 @@ Retourne UNIQUEMENT ce JSON :
                   </button>
                   <button onClick={()=>copy(e.addr, `rep-${t.id}-${ci}-${ei}`)} style={{ padding:"4px 10px", borderRadius:6, fontSize:11, cursor:"pointer", border:"1px solid #3f3f46", background:"transparent", color:"#a1a1aa" }}>
                     {copied === `rep-${t.id}-${ci}-${ei}` ? "✓" : "Copier"}
+                  </button>
+                  <button 
+                    onClick={() => handleSendApplication(t, e.addr)}
+                    disabled={sendingAppId === t.id || !gmailConnected || !cvFile}
+                    style={{ padding:"4px 10px", borderRadius:6, fontSize:11, cursor:"pointer", border:"1px solid #2563eb", background:"#2563eb", color:"#fff", fontWeight:700 }}
+                  >
+                    🚀 Postuler
                   </button>
                 </div>
               </div>
