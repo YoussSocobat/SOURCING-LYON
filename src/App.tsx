@@ -98,13 +98,13 @@ export default function App() {
       const text = await callGemini(
         `Tu es un assistant expert en recrutement. UTILISE GOOGLE SEARCH pour trouver des offres d'alternance RÉELLES et ACTUELLES (publiées il y a moins de 15 jours) pour les postes de Business Developer, Growth Marketing ou Commercial BtoB à Lyon et sa région (rayon ${radius}km).
 
-Recherche sur LinkedIn Jobs, Indeed, Welcome to the Jungle, Hellowork et les sites carrières des startups lyonnaises (ex: Agicap, LumApps, Spendesk, etc.).
+IMPORTANT : Pour chaque offre, cherche activement l'adresse email directe du recruteur ou du responsable (ex: rh@, jobs@, ou prenom.nom@entreprise.com). Ne fournis l'email que s'il est mentionné sur l'offre ou sur le site carrière de l'entreprise (100% sûr).
 
-Retourne UNIQUEMENT ce JSON (aucun autre texte, aucun markdown) :
-{"offres":[{"titre":"","entreprise":"","ville":"","contrat":"Alternance","salaire":"","description":"Résumé de l'offre réelle","date":"YYYY-MM-DD","url":"LIEN_VERS_L_OFFRE_REELLE","email":"EMAIL_SI_DISPONIBLE","source":"NOM_DU_SITE"}]}
+Retourne UNIQUEMENT ce JSON :
+{"offres":[{"titre":"","entreprise":"","ville":"","contrat":"Alternance","salaire":"","description":"","date":"YYYY-MM-DD","url":"LIEN_REEL","email":"EMAIL_VERIFIE_UNIQUEMENT","source":"NOM_DU_SITE"}]}
 
-IMPORTANT: Ne pas inventer d'offres. Si tu n'en trouves pas assez, donne uniquement celles qui sont vérifiables.`,
-        true // Use Google Search
+Si aucun email n'est trouvé pour une offre, laisse le champ "email" vide.`,
+        true
       );
       const parsed = parseJSON(text);
       const offres = Array.isArray(parsed) ? parsed : (parsed.offres || []);
@@ -359,9 +359,12 @@ Retourne UNIQUEMENT ce JSON :
                           {o.url&&<a href={o.url} target="_blank" rel="noreferrer" style={{ padding:"5px 11px", borderRadius:7, fontSize:11, fontWeight:600, textDecoration:"none", border:"1px solid #1e40af", background:"#1e3a8a", color:"#93c5fd" }}>Voir →</a>}
                         </div>
                         {o.email&&(
-                          <button onClick={()=>copy(o.email,"oe-"+i)} style={{ padding:"3px 10px", borderRadius:7, fontSize:11, cursor:"pointer", border:"1px solid #15803d", background:"#052e16", color:"#4ade80", fontFamily:"monospace" }}>
-                            {copied==="oe-"+i?"✓ Copié":o.email}
-                          </button>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
+                            <span style={{ fontSize: 9, color: "#4ade80", fontWeight: 700, textTransform: "uppercase" }}>Contact Direct :</span>
+                            <button onClick={()=>copy(o.email,"oe-"+i)} style={{ padding:"4px 12px", borderRadius:7, fontSize:11, cursor:"pointer", border:"1px solid #15803d", background:"#052e16", color:"#4ade80", fontFamily:"monospace", fontWeight: 600 }}>
+                              {copied==="oe-"+i?"✓ Copié":o.email}
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
