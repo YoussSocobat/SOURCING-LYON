@@ -32,21 +32,31 @@ export async function callGemini(prompt: string, useSearch = false) {
   }
 }
 
-export async function generateApplicationEmail(jobTitle: string, company: string, description: string) {
+export async function generateApplicationEmail(jobTitle: string, company: string, description: string, recruiterName?: string) {
   const prompt = `Tu es Charid Youssef, étudiant en Master à l'INSEEC Lyon, spécialisé en Digital Marketing, E-commerce et Growth.
 Écris un email de candidature court, percutant et personnalisé pour le poste de "${jobTitle}" chez "${company}".
+
+${recruiterName ? `Le destinataire est : ${recruiterName}.` : "Le destinataire est le Responsable du Recrutement."}
 
 CONTEXTE DE L'OFFRE :
 ${description}
 
-TES POINTS FORTS :
-- Expertise Meta Ads / Google Ads.
-- Maîtrise de l'Automation (n8n) et de l'IA générative.
-- Expérience en Growth Marketing.
+CONTRAT : Alternance (Octobre 2026).
 
-L'email doit être professionnel, montrer que tu as compris les besoins de l'entreprise et proposer un échange.
-Ne mets pas d'objet (je le générerai séparément).
-Commence par "Bonjour [Nom du recruteur ou Responsable Recrutement]," et termine par "Cordialement, Charid Youssef".
+TES POINTS FORTS & AVANT-GARDE IA (Autodidacte) :
+- Débutant motivé en Ads (Meta/Google) et SEO, avec une grande envie d'apprendre et de progresser.
+- Maîtrise d'outils IA de pointe (appris en autodidacte) : Vibecoding, Claude Code, Agents IA via OpenClaw.
+- Automatisation via n8n.
+- Profil hybride Business Dev & Growth Strategy (INSEEC Lyon).
+
+DIRECTIVES CRUCIALES :
+1. NE METS AUCUN ESPACE VIDE À COMPLÉTER (pas de [Nom], pas de [Date], pas de [Entreprise]).
+2. L'email doit être prêt à l'envoi tel quel.
+3. Si le nom du recruteur est connu (${recruiterName || "non connu"}), utilise-le poliment. Sinon, utilise une formule professionnelle comme "Bonjour," ou "Madame, Monsieur,".
+4. Le ton doit être professionnel, humble mais déterminé. Souligne que tu es en phase d'apprentissage sur les Ads/SEO mais que tu maîtrises déjà des outils IA très avancés.
+5. Évite absolument les familiarités comme "prendre un café". Propose plutôt un "entretien" ou un "échange professionnel".
+6. Termine par "Cordialement, Charid Youssef".
+6. Ne mets pas d'objet (je le générerai séparément).
 
 Retourne UNIQUEMENT le corps de l'email.`;
 
@@ -56,6 +66,7 @@ Retourne UNIQUEMENT le corps de l'email.`;
   });
   return response.text;
 }
+
 export function parseJSON(text: string) {
   const cleaned = text.trim();
   try {

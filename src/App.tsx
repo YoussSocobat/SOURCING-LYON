@@ -22,21 +22,21 @@ const TARGETS = [
 ];
 
 const SCRAPE_QUERIES = [
-  "agence marketing digital Lyon recrutement",
-  "startup SaaS Lyon croissance 2025",
-  "agence growth hacking Lyon",
-  "cabinet conseil commercial Lyon PME",
-  "agence SEO SEA Lyon",
-  "startup tech Lyon Villeurbanne levée de fonds",
-  "agence emailing CRM automation Lyon",
-  "cabinet développement commercial BtoB Lyon",
-  "agence inbound marketing Lyon",
-  "startup e-commerce Lyon croissance",
-  "agence publicité digitale Meta Google Ads Lyon",
-  "scale-up tech Rhône-Alpes recrutement",
-  "agence lead generation BtoB Lyon",
-  "startup IA machine learning Lyon",
-  "consultant growth hacking indépendant Lyon",
+  "alternance marketing digital Lyon",
+  "alternance growth marketing Lyon",
+  "alternance e-commerce Lyon",
+  "alternance business developer Lyon startup",
+  "alternance assistant marketing Lyon",
+  "alternance communication digitale Lyon",
+  "alternance webmarketing Lyon",
+  "alternance marketing automation Lyon",
+  "alternance acquisition marketing Lyon",
+  "alternance marketing stratégique Lyon",
+  "alternance chef de projet digital Lyon",
+  "alternance marketing opérationnel Lyon",
+  "alternance marketing b2b Lyon",
+  "alternance marketing b2c Lyon",
+  "alternance marketing luxe Lyon",
 ];
 
 const SC: Record<string, string> = { "🟢":"#22c55e", "🟡":"#eab308", "🔴":"#ef4444" };
@@ -73,17 +73,25 @@ export default function App() {
 
   // Gmail & CV Management
   const [gmailConnected, setGmailConnected] = useState(false);
-  const [cvFile, setCvFile] = useState<string | null>(null);
+  const [cvFile, setCvFile] = useState<string | null>("CV_Charid_Youssef.pdf");
   const [sendingAppId, setSendingAppId] = useState<string | number | null>(null);
   const [appStatus, setAppStatus] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
 
-  // Check Gmail status on load
+  // Preview Modal
+  const [previewEmail, setPreviewEmail] = useState<{ target: any, emailAddr: string, subject: string, body: string } | null>(null);
+
+  // Check Gmail & CV status on load
   useEffect(() => {
-    fetch('/api/auth/status')
+    fetch('/api/auth/status', { credentials: 'include' })
       .then(res => res.json())
       .then(data => setGmailConnected(data.connected))
       .catch(() => setGmailConnected(false));
+      
+    fetch('/api/cv-status', { credentials: 'include' })
+      .then(res => res.json())
+      .then(data => setCvFile(data.filename || "CV_Charid_Youssef.pdf"))
+      .catch(() => setCvFile("CV_Charid_Youssef.pdf"));
   }, []);
 
   // Listen for OAuth success
@@ -97,9 +105,13 @@ export default function App() {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
+  const [showDebug, setShowDebug] = useState(false);
+  const redirectUri = `${window.location.origin}/auth/callback`;
+
   const handleConnectGmail = async () => {
     try {
-      const res = await fetch('/api/auth/google/url');
+      const origin = window.location.origin;
+      const res = await fetch(`/api/auth/google/url?origin=${encodeURIComponent(origin)}`, { credentials: 'include' });
       const { url } = await res.json();
       window.open(url, 'google_auth', 'width=600,height=700');
     } catch (e) {
@@ -108,7 +120,7 @@ export default function App() {
   };
 
   const handleLogoutGmail = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
     setGmailConnected(false);
   };
 
@@ -119,39 +131,68 @@ export default function App() {
     const formData = new FormData();
     formData.append('cv', file);
     
+    setAppStatus("Téléchargement du CV...");
     try {
       const res = await fetch('/api/upload-cv', {
         method: 'POST',
+        credentials: 'include',
         body: formData
       });
       if (res.ok) {
         setCvFile(file.name);
+        setAppStatus("CV téléchargé avec succès !");
+        setTimeout(() => setAppStatus(null), 3000);
+      } else {
+        throw new Error("Échec du téléchargement");
       }
-    } catch (e) {
-      console.error('Upload failed', e);
+    } catch (e: any) {
+      setAppStatus(`Erreur: ${e.message}`);
+      setTimeout(() => setAppStatus(null), 5000);
     }
   };
 
   const handleSendApplication = async (target: any, emailAddr: string) => {
-    if (!gmailConnected) return alert("Connecte ton Gmail d'abord !");
+    if (!gmailConnected || !cvFile) {
+      setAppStatus("Erreur: Gmail non connecté ou CV manquant");
+      setTimeout(() => setAppStatus(null), 3000);
+      return;
+    }
+    
     setSendingAppId(target.id);
-    setAppStatus("Génération de l'email...");
+    setAppStatus("Génération de l'email personnalisé...");
     
     try {
-      // 1. Generate Email with Gemini
       const jobTitle = target.titre || target.secteur || "Alternant Marketing Digital";
       const company = target.entreprise || target.name;
       const description = target.description || target.pertinence || "";
+      const recruiterName = target.contacts?.[0]?.nom;
       
-      const body = await generateApplicationEmail(jobTitle, company, description);
+      const body = await generateApplicationEmail(jobTitle, company, description, recruiterName);
       const subject = `Candidature Alternance - ${jobTitle} - Charid Youssef`;
       
-      setAppStatus("Envoi de l'email via Gmail...");
-      
+      // Instead of sending immediately, show preview
+      setPreviewEmail({ target, emailAddr, subject, body });
+      setAppStatus(null);
+    } catch (e: any) {
+      setAppStatus(`Erreur: ${e.message}`);
+      setSendingAppId(null);
+      setTimeout(() => setAppStatus(null), 5000);
+    }
+  };
+
+  const confirmSendApplication = async () => {
+    if (!previewEmail) return;
+    const { target, emailAddr, subject, body } = previewEmail;
+    
+    setAppStatus("Envoi de l'email via Gmail...");
+    setPreviewEmail(null); // Close modal
+    
+    try {
       // 2. Send via Gmail API
       const res = await fetch('/api/send-application', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           to: emailAddr,
           subject,
@@ -164,7 +205,11 @@ export default function App() {
         setAppStatus("Candidature envoyée avec succès !");
         setTimeout(() => setAppStatus(null), 3000);
       } else {
-        throw new Error("Erreur lors de l'envoi");
+        const err = await res.json();
+        if (res.status === 401) {
+          setGmailConnected(false);
+        }
+        throw new Error(err.error || "Erreur lors de l'envoi");
       }
     } catch (e: any) {
       setAppStatus(`Erreur: ${e.message}`);
@@ -182,9 +227,10 @@ export default function App() {
     try {
       const prompt = `Tu es un assistant expert en recrutement et sourcing. UTILISE GOOGLE SEARCH pour trouver des offres d'alternance RÉELLES et ACTUELLES (publiées il y a moins de 15 jours) pour Charid Youssef (étudiant Master INSEEC Lyon).
 
-DOMAINES CIBLÉS : Business Developer, Growth Marketing, Digital Marketing, E-commerce, Commercial B2B.
-COMPÉTENCES CLÉS : Meta Ads, Google Ads, SEO/SEA, Emailing (Brevo), IA générative, Automation (n8n).
+DOMAINES CIBLÉS : Marketing Digital, Growth Marketing, E-commerce, Business Developer, IA Automation.
+PROFIL : Débutant motivé en Ads (Meta/Google) et SEO cherchant à monter en compétences. Passionné par l'avant-garde de l'IA apprise en autodidacte : Vibecoding, Claude Code, Agents IA via OpenClaw, et automatisation via n8n.
 LIEU : Lyon et sa région (rayon ${radius}km).
+CIBLE : Entreprises innovantes, startups tech, agences digital/growth qui valorisent l'IA et l'automatisation.
 
 CRITÈRES EXCLUSIFS (TRÈS IMPORTANT) :
 - EXCLURE TOUTES LES ÉCOLES et centres de formation.
@@ -337,17 +383,21 @@ Retourne UNIQUEMENT ce JSON (aucun autre texte) :
 Destinataire : ${contact.nom} (${contact.poste}) chez ${company.name}.
 Expéditeur : Charid Youssef, étudiant en Master Business Dev & Growth Strategy à l'INSEEC Lyon (dispo Octobre 2026).
 
-CONTEXTE CV :
-- Expérience : Assistant Digital chez Socobat (Meta/Google Ads, SEO, Emailing Brevo) + BizDev chez EMSP (Prospection B2B, CRM).
-- Compétences : Growth Strategy, Automation (n8n), IA Appliquée (Agents, Prompting), Digital Marketing.
+CONTEXTE CV & COMPÉTENCES :
+- Expérience : Assistant Digital chez Socobat (Meta/Google Ads, SEO, Emailing) + BizDev chez EMSP.
+- HUMILITÉ : Je suis actuellement débutant en Ads (Meta/Google) et SEO, et je cherche justement une alternance pour monter en compétences sur ces sujets.
+- AVANT-GARDE IA (Autodidacte) : Parallèlement, je me passionne pour les outils IA de pointe que l'on n'enseigne pas encore à l'école : Vibecoding, Claude Code, déploiement d'Agents IA via OpenClaw et automatisation via n8n.
 - Langues : Anglais C2, Italien Maternel, Arabe Bilingue.
 
-L'email doit :
-1. Être très simple, authentique et percutant.
-2. Mentionner brièvement mon expertise en Growth/Digital (Ads, SEO, IA) et mon parcours à l'INSEEC.
-3. Préciser la recherche d'alternance pour Octobre 2026.
-4. Mentionner que mon CV est joint en pièce jointe (PJ).
-5. Demander un court échange (téléphone ou café).
+DIRECTIVES CRUCIALES :
+1. NE METS AUCUN ESPACE VIDE À COMPLÉTER (pas de [Nom], pas de [Date], pas de [Entreprise]).
+2. L'email doit être prêt à l'envoi tel quel.
+3. Utilise le nom du destinataire (${contact.nom}) poliment dans l'introduction.
+4. Souligne mon profil hybride : une base Marketing/Sales, une grande envie d'apprendre les Ads/SEO, et une expertise IA technique (Vibecoding, Agents, n8n) apprise en autodidacte.
+5. Précise la recherche d'alternance pour Octobre 2026.
+6. Mentionne que mon CV est joint en pièce jointe (PJ).
+7. Le ton doit être professionnel, humble mais déterminé. Évite absolument les familiarités comme "prendre un café". Propose plutôt un "entretien" ou un "échange professionnel".
+8. Termine par "Cordialement, Charid Youssef".
 
 Retourne UNIQUEMENT ce JSON :
 {"objet": "Sujet simple et accrocheur", "corps": "Contenu de l'email \\n"}`;
@@ -511,9 +561,9 @@ Retourne UNIQUEMENT ce JSON :
                             style={{ padding:"5px 9px", borderRadius:7, fontSize:12, cursor:"pointer", border:"1px solid "+(saved[i]?"#ca8a04":"#3f3f46"), background:saved[i]?"#422006":"transparent", color:saved[i]?"#fbbf24":"#71717a" }}>
                             {saved[i]?"🔖":"☆"}
                           </button>
-                          <button onClick={()=>setApplied(p=>({...p,[i]:!p[i]}))}
-                            style={{ padding:"5px 11px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", border:"1px solid "+(applied[i]?"#16a34a":"#3f3f46"), background:applied[i]?"#052e16":"transparent", color:applied[i]?"#4ade80":"#a1a1aa" }}>
-                            {applied[i]?"✓ Postulé":"Cocher"}
+                          <button onClick={()=>setApplied(p=>({...p,[o.id]:!p[o.id]}))}
+                            style={{ padding:"5px 11px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", border:"1px solid "+(applied[o.id]?"#16a34a":"#3f3f46"), background:applied[o.id]?"#052e16":"transparent", color:applied[o.id]?"#4ade80":"#a1a1aa" }}>
+                            {applied[o.id]?"✓ Postulé":"Cocher"}
                           </button>
                           {o.url&&<a href={o.url} target="_blank" rel="noreferrer" style={{ padding:"5px 11px", borderRadius:7, fontSize:11, fontWeight:600, textDecoration:"none", border:"1px solid #1e40af", background:"#1e3a8a", color:"#93c5fd" }}>Voir →</a>}
                         </div>
@@ -565,6 +615,49 @@ Retourne UNIQUEMENT ce JSON :
         </div>
       )}
 
+      {/* ══ PREVIEW MODAL ══ */}
+      {previewEmail && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:20 }}>
+          <div style={{ background:"#18181b", border:"1px solid #27272a", borderRadius:16, width:"100%", maxWidth:600, maxHeight:"90vh", display:"flex", flexDirection:"column", overflow:"hidden" }}>
+            <div style={{ padding:20, borderBottom:"1px solid #27272a", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <h3 style={{ margin:0, fontSize:18, fontWeight:700 }}>Vérification de l'email</h3>
+              <button onClick={() => { setPreviewEmail(null); setSendingAppId(null); }} style={{ background:"none", border:"none", color:"#71717a", cursor:"pointer", fontSize:20 }}>✕</button>
+            </div>
+            <div style={{ padding:20, overflowY:"auto", flex:1, display:"flex", flexDirection:"column", gap:16 }}>
+              <div>
+                <div style={{ fontSize:11, color:"#71717a", textTransform:"uppercase", fontWeight:700, marginBottom:4 }}>Destinataire</div>
+                <div style={{ fontSize:14, color:"#fff" }}>{previewEmail.emailAddr} ({previewEmail.target.entreprise || previewEmail.target.name})</div>
+              </div>
+              <div>
+                <div style={{ fontSize:11, color:"#71717a", textTransform:"uppercase", fontWeight:700, marginBottom:4 }}>Objet</div>
+                <div style={{ fontSize:14, color:"#fff", background:"#09090b", padding:10, borderRadius:8, border:"1px solid #27272a" }}>{previewEmail.subject}</div>
+              </div>
+              <div>
+                <div style={{ fontSize:11, color:"#71717a", textTransform:"uppercase", fontWeight:700, marginBottom:4 }}>Corps du message</div>
+                <textarea 
+                  value={previewEmail.body}
+                  onChange={(e) => setPreviewEmail({ ...previewEmail, body: e.target.value })}
+                  style={{ width:"100%", height:300, background:"#09090b", color:"#cbd5e1", border:"1px solid #27272a", borderRadius:8, padding:12, fontSize:13, lineHeight:1.5, resize:"none" }}
+                />
+              </div>
+              {cvFile && (
+                <div style={{ display:"flex", alignItems:"center", gap:8, color:"#3b82f6", fontSize:12 }}>
+                  <FileText size={14} />
+                  <span>Pièce jointe : {cvFile}</span>
+                </div>
+              )}
+            </div>
+            <div style={{ padding:20, borderTop:"1px solid #27272a", display:"flex", gap:12 }}>
+              <button onClick={() => { setPreviewEmail(null); setSendingAppId(null); }} style={{ flex:1, padding:12, borderRadius:10, background:"transparent", border:"1px solid #3f3f46", color:"#a1a1aa", fontWeight:600, cursor:"pointer" }}>Annuler</button>
+              <button onClick={confirmSendApplication} style={{ flex:2, padding:12, borderRadius:10, background:"#2563eb", border:"none", color:"#fff", fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+                <Send size={16} />
+                Confirmer et envoyer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ══ CANDIDATURE ══ */}
       {view === "candidature" && (
         <div style={{ flex:1, overflowY:"auto", padding:24 }}>
@@ -591,12 +684,38 @@ Retourne UNIQUEMENT ce JSON :
                       <button onClick={handleLogoutGmail} style={{ fontSize:11, color:"#71717a", background:"none", border:"none", cursor:"pointer", textDecoration:"underline" }}>Déconnecter</button>
                     </div>
                   ) : (
-                    <button 
-                      onClick={handleConnectGmail}
-                      style={{ width:"100%", padding:"14px", background:"#fff", color:"#000", fontWeight:800, borderRadius:12, border:"none", cursor:"pointer", transition:"all 0.2s", fontSize:14 }}
-                    >
-                      Connecter Gmail
-                    </button>
+                    <>
+                      <button 
+                        onClick={handleConnectGmail}
+                        style={{ width:"100%", padding:"14px", background:"#fff", color:"#000", fontWeight:800, borderRadius:12, border:"none", cursor:"pointer", transition:"all 0.2s", fontSize:14 }}
+                      >
+                        Connecter Gmail
+                      </button>
+                      
+                      <div style={{ marginTop: 8 }}>
+                        <button 
+                          onClick={() => setShowDebug(!showDebug)}
+                          style={{ fontSize: 11, color: "#71717a", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+                        >
+                          {showDebug ? "Masquer l'aide" : "Problème de connexion ? Voir la config"}
+                        </button>
+                        
+                        {showDebug && (
+                          <div style={{ marginTop: 12, padding: 12, background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", fontSize: 11 }}>
+                            <p style={{ color: "#f87171", marginBottom: 8, fontWeight: 700 }}>⚠️ Important : Si vous vous déconnectez tout seul, ouvrez l'application dans un nouvel onglet (bouton en haut à droite d'AI Studio).</p>
+                            <p style={{ color: "#a1a1aa", marginBottom: 8, fontWeight: 700 }}>À copier dans Google Cloud :</p>
+                            <div style={{ marginBottom: 8 }}>
+                              <span style={{ color: "#3b82f6", display: "block", marginBottom: 4 }}>Origine JavaScript :</span>
+                              <code style={{ background: "#000", padding: "4px 8px", borderRadius: 4, display: "block", color: "#e4e4e7", wordBreak: "break-all" }}>{window.location.origin}</code>
+                            </div>
+                            <div>
+                              <span style={{ color: "#3b82f6", display: "block", marginBottom: 4 }}>URI de redirection :</span>
+                              <code style={{ background: "#000", padding: "4px 8px", borderRadius: 4, display: "block", color: "#e4e4e7", wordBreak: "break-all" }}>{redirectUri}</code>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </>
                   )}
                 </div>
 
@@ -618,22 +737,32 @@ Retourne UNIQUEMENT ce JSON :
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div style={{ background:"rgba(37,99,235,0.1)", border:"1px solid rgba(37,99,235,0.2)", borderRadius:12, padding:16, display:"flex", gap:12 }}>
-              <Info size={20} color="#3b82f6" style={{ flexShrink:0, marginTop:2 }} />
-              <div style={{ fontSize:13, color:"#93c5fd", lineHeight:1.6 }}>
-                <strong>Comment ça marche ?</strong> Une fois configuré, un bouton <strong>🚀 Postuler</strong> apparaîtra sur chaque offre. 
-                L'IA rédigera un email personnalisé basé sur l'annonce et ton profil, puis l'enverra directement via ton Gmail avec ton CV en pièce jointe.
+              {/* Avant-garde IA Skills */}
+              <div style={{ marginTop:24, padding:20, background:"rgba(124,58,237,0.05)", border:"1px solid rgba(124,58,237,0.1)", borderRadius:12 }}>
+                <h3 style={{ fontSize:16, fontWeight:700, color:"#a78bfa", marginBottom:12, display:"flex", alignItems:"center", gap:8 }}>
+                  🚀 Apprentissage IA Avant-garde (Autodidacte)
+                </h3>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                  {["Vibecoding", "Claude Code", "Agents IA (OpenClaw)", "n8n Automation"].map(skill => (
+                    <span key={skill} style={{ fontSize:11, fontWeight:600, padding:"4px 10px", borderRadius:20, background:"rgba(124,58,237,0.1)", color:"#c084fc", border:"1px solid rgba(124,58,237,0.2)" }}>
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+                <p style={{ fontSize:12, color:"#71717a", marginTop:12, fontStyle:"italic" }}>
+                  Je suis actuellement débutant en Ads/SEO et je cherche à progresser. Parallèlement, je me passionne pour ces outils IA de pointe.
+                </p>
+              </div>
+
+              <div style={{ background:"rgba(37,99,235,0.1)", border:"1px solid rgba(37,99,235,0.2)", borderRadius:12, padding:16, display:"flex", gap:12, marginTop:24 }}>
+                <Info size={20} color="#3b82f6" style={{ flexShrink:0, marginTop:2 }} />
+                <div style={{ fontSize:13, color:"#93c5fd", lineHeight:1.6 }}>
+                  <strong>Comment ça marche ?</strong> Une fois configuré, un bouton <strong>🚀 Postuler</strong> apparaîtra sur chaque offre. 
+                  L'IA rédigera un email personnalisé basé sur l'annonce et ton profil, puis l'enverra directement via ton Gmail avec ton CV en pièce jointe.
+                </div>
               </div>
             </div>
-
-            {appStatus && (
-              <div style={{ position:"fixed", bottom:24, right:24, background:"#18181b", border:"1px solid #27272a", padding:"16px 24px", borderRadius:12, boxShadow:"0 20px 25px -5px rgba(0,0,0,0.3)", display:"flex", alignItems:"center", gap:12, zIndex:100, animation:"slide-in-from-bottom-4 0.3s ease-out" }}>
-                <div style={{ width:8, height:8, borderRadius:"50%", background:"#3b82f6", animation:"pulse 2s infinite" }} />
-                <span style={{ fontSize:14, fontWeight:600 }}>{appStatus}</span>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -881,9 +1010,9 @@ Retourne UNIQUEMENT ce JSON :
                   <button 
                     onClick={() => handleSendApplication(t, e.addr)}
                     disabled={sendingAppId === t.id || !gmailConnected || !cvFile}
-                    style={{ padding:"4px 10px", borderRadius:6, fontSize:11, cursor:"pointer", border:"1px solid #2563eb", background:"#2563eb", color:"#fff", fontWeight:700 }}
+                    style={{ padding:"4px 10px", borderRadius:6, fontSize:11, cursor:"pointer", border:"1px solid #2563eb", background:applied[t.id] ? "#1e3a8a" : "#2563eb", color:"#fff", fontWeight:700 }}
                   >
-                    🚀 Postuler
+                    {sendingAppId === t.id ? "..." : applied[t.id] ? "✓ Envoyé" : "🚀 Postuler"}
                   </button>
                 </div>
               </div>
@@ -892,6 +1021,65 @@ Retourne UNIQUEMENT ce JSON :
         </div>
       )}
 
+      {/* ══ EMAIL PREVIEW MODAL ══ */}
+      {previewEmail && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", backdropFilter:"blur(4px)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:20 }}>
+          <div style={{ background:"#18181b", border:"1px solid #27272a", borderRadius:16, width:"100%", maxWidth:600, maxHeight:"90vh", display:"flex", flexDirection:"column", boxShadow:"0 25px 50px -12px rgba(0,0,0,0.5)" }}>
+            <div style={{ padding:20, borderBottom:"1px solid #27272a", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <h3 style={{ fontSize:18, fontWeight:700 }}>Aperçu de votre candidature</h3>
+              <button onClick={() => { setPreviewEmail(null); setSendingAppId(null); }} style={{ background:"none", border:"none", color:"#71717a", cursor:"pointer" }}>✕</button>
+            </div>
+            <div style={{ padding:20, overflowY:"auto", display:"flex", flexDirection:"column", gap:16 }}>
+              <div>
+                <label style={{ fontSize:11, color:"#71717a", fontWeight:700, textTransform:"uppercase", display:"block", marginBottom:4 }}>Destinataire</label>
+                <div style={{ fontSize:14, color:"#fff", background:"#09090b", padding:"8px 12px", borderRadius:8, border:"1px solid #27272a" }}>{previewEmail.emailAddr}</div>
+              </div>
+              <div>
+                <label style={{ fontSize:11, color:"#71717a", fontWeight:700, textTransform:"uppercase", display:"block", marginBottom:4 }}>Objet</label>
+                <input 
+                  value={previewEmail.subject} 
+                  onChange={e => setPreviewEmail({...previewEmail, subject: e.target.value})}
+                  style={{ width:"100%", fontSize:14, color:"#fff", background:"#09090b", padding:"8px 12px", borderRadius:8, border:"1px solid #27272a" }} 
+                />
+              </div>
+              <div>
+                <label style={{ fontSize:11, color:"#71717a", fontWeight:700, textTransform:"uppercase", display:"block", marginBottom:4 }}>Corps du message</label>
+                <textarea 
+                  value={previewEmail.body} 
+                  onChange={e => setPreviewEmail({...previewEmail, body: e.target.value})}
+                  style={{ width:"100%", height:300, fontSize:14, color:"#cbd5e1", background:"#09090b", padding:"12px", borderRadius:8, border:"1px solid #27272a", lineHeight:1.5, resize:"none" }} 
+                />
+              </div>
+              <div style={{ fontSize:12, color:"#71717a", display:"flex", alignItems:"center", gap:8 }}>
+                <FileText size={14} /> Pièce jointe : {cvFile}
+              </div>
+            </div>
+            <div style={{ padding:20, borderTop:"1px solid #27272a", display:"flex", gap:12 }}>
+              <button 
+                onClick={() => { setPreviewEmail(null); setSendingAppId(null); }}
+                style={{ flex:1, padding:"12px", borderRadius:10, background:"transparent", color:"#a1a1aa", border:"1px solid #3f3f46", fontWeight:600, cursor:"pointer" }}
+              >
+                Annuler
+              </button>
+              <button 
+                onClick={confirmSendApplication}
+                style={{ flex:2, padding:"12px", borderRadius:10, background:"#2563eb", color:"#fff", border:"none", fontWeight:700, cursor:"pointer", boxShadow:"0 10px 15px -3px rgba(37,99,235,0.4)" }}
+              >
+                Confirmer et envoyer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ STATUS NOTIFICATION ══ */}
+      {appStatus && (
+        <div style={{ position:"fixed", bottom:24, right:24, background:"#18181b", border:"1px solid #27272a", padding:"16px 24px", borderRadius:12, boxShadow:"0 20px 25px -5px rgba(0,0,0,0.5)", display:"flex", alignItems:"center", gap:12, zIndex:2000, animation:"slide-in-from-bottom-4 0.3s ease-out" }}>
+          <div style={{ width:8, height:8, borderRadius:"50%", background:appStatus.includes("Erreur") ? "#ef4444" : "#3b82f6", animation:"pulse 2s infinite" }} />
+          <span style={{ fontSize:14, fontWeight:600, color:appStatus.includes("Erreur") ? "#fca5a5" : "#fff" }}>{appStatus}</span>
+          <button onClick={() => setAppStatus(null)} style={{ background:"none", border:"none", color:"#71717a", cursor:"pointer", marginLeft:8 }}>✕</button>
+        </div>
+      )}
     </div>
   );
 }

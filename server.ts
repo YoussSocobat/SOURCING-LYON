@@ -25,14 +25,17 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = 3000;
 
+// Trust proxy is required for Cloud Run to handle https correctly
+app.set('trust proxy', 1);
+
 // Multer for CV upload (in memory)
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-// Session management (SameSite=none, Secure=true for iframe)
+// Session management (Using cookie-session for persistence across Cloud Run restarts)
 app.use(cookieSession({
-  name: 'session',
-  keys: [process.env.SESSION_SECRET || 'dev-secret'],
+  name: 'cv_gen_session',
+  keys: [process.env.SESSION_SECRET || 'cv-generator-secret-key'],
   maxAge: 24 * 60 * 60 * 1000, // 24 hours
   secure: true,
   sameSite: 'none',
@@ -41,12 +44,8 @@ app.use(cookieSession({
 
 app.use(express.json());
 
-// Helper to get OAuth client with dynamic redirect URI
-const getOAuth2Client = (req: Request) => {
-  const protocol = req.protocol;
-  const host = req.get('host');
-  const redirectUri = `${protocol}://${host}/auth/callback`;
-  
+// Helper to get OAuth client
+const getOAuth2Client = (redirectUri: string) => {
   return new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
@@ -54,10 +53,20 @@ const getOAuth2Client = (req: Request) => {
   );
 };
 
+const getRedirectUri = (req: Request) => {
+  // On Cloud Run, x-forwarded-host is the external domain
+  const host = req.get('x-forwarded-host') || req.get('host') || '';
+  const hostname = host.split(':')[0]; // Remove port
+  return `https://${hostname}/auth/callback`;
+};
+
 // ── AUTH ROUTES ──────────────────────────────────────────────────────────────
 
 app.get('/api/auth/google/url', (req, res) => {
-  const client = getOAuth2Client(req);
+  const redirectUri = getRedirectUri(req);
+  console.log('[OAuth] Step 1: Generating URL. RedirectURI:', redirectUri);
+  
+  const client = getOAuth2Client(redirectUri);
   const url = client.generateAuthUrl({
     access_type: 'offline',
     scope: [
@@ -73,11 +82,22 @@ app.get('/auth/callback', async (req, res) => {
   const { code } = req.query;
   if (!code) return res.status(400).send('No code provided');
   
-  const client = getOAuth2Client(req);
+  const redirectUri = getRedirectUri(req);
+  console.log('[OAuth] Step 2: Callback received. Using RedirectURI:', redirectUri);
+
+  const client = getOAuth2Client(redirectUri);
   
   try {
     const { tokens } = await client.getToken(code as string);
-    req.session!.tokens = tokens;
+    // Store ONLY the essential tokens to keep cookie size small (max 4KB for cookie-session)
+    req.session.tokens = {
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expiry_date: tokens.expiry_date
+    };
+    
+    // Also store a flag to help debugging
+    req.session.isAuth = true;
     
     res.send(`
       <html>
@@ -90,13 +110,19 @@ app.get('/auth/callback', async (req, res) => {
               window.location.href = '/';
             }
           </script>
-          <p>Authentification réussie ! Cette fenêtre va se fermer.</p>
+          <p>Authentification réussie ! Redirection en cours...</p>
         </body>
       </html>
     `);
   } catch (error: any) {
-    console.error('OAuth error details:', error.response?.data || error.message);
-    res.status(500).send(`Erreur d'authentification: ${error.message}`);
+    const errorData = error.response?.data || error.message;
+    console.error('[OAuth] Error during token exchange:', errorData);
+    res.status(500).send(`
+      <h3>Erreur d'authentification</h3>
+      <p>Détails: ${JSON.stringify(errorData)}</p>
+      <p>URI utilisée par le serveur: <b>${redirectUri}</b></p>
+      <p>Vérifiez que cette URI exacte est bien dans votre Console Google Cloud.</p>
+    `);
   }
 });
 
@@ -114,13 +140,8 @@ app.post('/api/auth/logout', (req, res) => {
 app.post('/api/upload-cv', upload.single('cv'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   
-  // Store CV in session (base64) - Warning: session size limit is ~4KB for cookies
-  // Better: store in memory or temporary storage if file is large.
-  // For simplicity in this demo, we'll store it in a simple memory map keyed by sessionId
-  // But for now, let's just use a global map (not production ready, but works for demo)
-  const sessionId = req.session?.id || 'default';
-  (global as any).cvStorage = (global as any).cvStorage || {};
-  (global as any).cvStorage[sessionId] = {
+  // Store CV in global storage (since it's a single-user dev environment for now)
+  (global as any).userCV = {
     buffer: req.file.buffer,
     originalname: req.file.originalname,
     mimetype: req.file.mimetype
@@ -129,27 +150,40 @@ app.post('/api/upload-cv', upload.single('cv'), (req, res) => {
   res.json({ success: true, filename: req.file.originalname });
 });
 
+app.get('/api/cv-status', (req, res) => {
+  res.json({ filename: (global as any).userCV?.originalname || null });
+});
+
 // ── EMAIL SENDING ───────────────────────────────────────────────────────────
 
 app.post('/api/send-application', async (req, res) => {
-  if (!req.session?.tokens) return res.status(401).json({ error: 'Not connected to Gmail' });
+  if (!req.session?.tokens) {
+    console.error('Session tokens missing for send-application. Session ID:', req.session?.id);
+    return res.status(401).json({ error: 'Not connected to Gmail' });
+  }
   
   const { to, subject, body } = req.body;
-  const sessionId = req.session?.id || 'default';
-  const cv = (global as any).cvStorage?.[sessionId];
+  const cv = (global as any).userCV;
 
   try {
-    const client = getOAuth2Client(req);
+    const fallbackRedirectUri = `https://${req.get('host')}/auth/callback`;
+    const redirectUri = req.session?.redirectUri || fallbackRedirectUri;
+    console.log('Sending application with redirectUri:', redirectUri);
+    const client = getOAuth2Client(redirectUri);
     client.setCredentials(req.session.tokens);
     const gmail = google.gmail({ version: 'v1', auth: client });
 
     const boundary = 'foo_bar_baz';
-    const nl = '\n';
+    const nl = '\r\n'; // RFC 2822 uses CRLF
     
-    let email = [
+    // Helper to encode subject for non-ASCII characters
+    const encodedSubject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
+
+    let emailParts = [
+      `MIME-Version: 1.0`,
       `To: ${to}`,
-      `Subject: ${subject}`,
-      'Content-Type: multipart/mixed; boundary=' + boundary,
+      `Subject: ${encodedSubject}`,
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
       '',
       '--' + boundary,
       'Content-Type: text/plain; charset="UTF-8"',
@@ -157,21 +191,21 @@ app.post('/api/send-application', async (req, res) => {
       '',
       body,
       ''
-    ].join(nl);
+    ];
 
     if (cv) {
-      email += [
-        '--' + boundary,
-        `Content-Type: ${cv.mimetype}; name="${cv.originalname}"`,
-        'Content-Disposition: attachment; filename="' + cv.originalname + '"',
-        'Content-Transfer-Encoding: base64',
-        '',
-        cv.buffer.toString('base64'),
-        ''
-      ].join(nl);
+      emailParts.push('--' + boundary);
+      emailParts.push(`Content-Type: ${cv.mimetype}; name="${cv.originalname}"`);
+      emailParts.push(`Content-Disposition: attachment; filename="${cv.originalname}"`);
+      emailParts.push('Content-Transfer-Encoding: base64');
+      emailParts.push('');
+      emailParts.push(cv.buffer.toString('base64'));
+      emailParts.push('');
     }
 
-    email += '--' + boundary + '--';
+    emailParts.push('--' + boundary + '--');
+
+    const email = emailParts.join(nl);
 
     const base64SafeEmail = Buffer.from(email)
       .toString('base64')
