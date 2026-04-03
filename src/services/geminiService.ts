@@ -15,7 +15,7 @@ function getAi() {
 
 export async function callGemini(prompt: string, useSearch = false, retryCount = 0, model = "gemini-3-flash-preview") {
   const timeoutPromise = new Promise((_, reject) => 
-    setTimeout(() => reject(new Error("Timeout: L'API Gemini a mis trop de temps à répondre.")), 60000)
+    setTimeout(() => reject(new Error("Timeout: L'API Gemini a mis trop de temps à répondre.")), 90000)
   );
 
   try {
@@ -49,26 +49,29 @@ export async function callGemini(prompt: string, useSearch = false, retryCount =
     const isTimeout = errStr.includes("timeout");
 
     if (isTimeout) {
-      throw error; // Don't retry on timeout
+      throw error;
     }
     
-    // If rate limit hit on gemini-3, try falling back to gemini-flash-latest which often has higher quotas
     if (isRateLimit && model === "gemini-3-flash-preview") {
       console.log("Switching to fallback model gemini-flash-latest due to rate limit...");
       return callGemini(prompt, useSearch, retryCount, "gemini-flash-latest");
     }
 
-    if (isRateLimit && retryCount < 3) {
-      const delay = Math.pow(2, retryCount) * 2000 + Math.random() * 1000;
-      console.log(`Rate limit hit (429), retrying in ${Math.round(delay/1000)}s... (Attempt ${retryCount + 1}/3)`);
+    // More aggressive retries for Render
+    if (isRateLimit && retryCount < 5) {
+      const delay = Math.pow(2, retryCount) * 5000 + Math.random() * 2000;
+      console.log(`Rate limit hit (429), retrying in ${Math.round(delay/1000)}s... (Attempt ${retryCount + 1}/5)`);
       await new Promise(resolve => setTimeout(resolve, delay));
       return callGemini(prompt, useSearch, retryCount + 1, model);
     }
     
     if (isRateLimit) {
       const isRender = typeof window !== 'undefined' && window.location.hostname.includes('render');
-      const extraMsg = isRender ? "\n\nNote: Sur Render, les limites sont plus strictes. Vérifiez que votre clé API est bien configurée dans le dashboard Render." : "";
-      throw new Error("⚠️ Limite de requêtes atteinte (429). Veuillez patienter une minute avant de réessayer." + extraMsg);
+      let extraMsg = "";
+      if (useSearch) extraMsg += "\n\n💡 L'outil de recherche Google (Search Tool) est très limité sur les comptes gratuits. Attendez 1 minute.";
+      if (isRender) extraMsg += "\n\n⚠️ Note Render : Vérifiez que GEMINI_API_KEY est bien dans vos 'Environment Variables' sur Render.";
+      
+      throw new Error("⚠️ Limite de requêtes atteinte (429). " + extraMsg);
     }
     throw error;
   }

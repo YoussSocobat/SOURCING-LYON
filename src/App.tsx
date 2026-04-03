@@ -91,6 +91,8 @@ export default function App() {
   const [loadingScrape, setLoadingScrape] = useState(false);
   const [scrapeError, setScrapeError] = useState<string | null>(null);
   const [scrapeCount, setScrapeCount] = useState(0);
+  const [showImportArea, setShowImportArea] = useState(false);
+  const [importText, setImportText] = useState("");
 
   // Email Draft Generation
   const [emailDraft, setEmailDraft] = useState<any>(null);
@@ -154,6 +156,38 @@ export default function App() {
   const clearAllDynamicTargets = () => {
     setDynamicTargets([]);
     setBatchSelection(new Set());
+  };
+
+  const copyAllTargetsJSON = () => {
+    const data = JSON.stringify(dynamicTargets, null, 2);
+    navigator.clipboard.writeText(data);
+    setAppStatus("✅ JSON copié dans le presse-papier !");
+    setTimeout(() => setAppStatus(null), 3000);
+  };
+
+  const handleImportJSON = () => {
+    try {
+      const parsed = JSON.parse(importText);
+      if (!Array.isArray(parsed)) throw new Error("Le format doit être un tableau d'objets.");
+      
+      setDynamicTargets(prev => {
+        const combined = [...parsed, ...prev];
+        const seen = new Set();
+        return combined.filter(t => {
+          if (seen.has(t.id)) return false;
+          seen.add(t.id);
+          return true;
+        }).slice(0, 200);
+      });
+      
+      setImportText("");
+      setShowImportArea(false);
+      setAppStatus(`✅ ${parsed.length} cibles importées avec succès !`);
+      setTimeout(() => setAppStatus(null), 3000);
+    } catch (e: any) {
+      setAppStatus(`❌ Erreur d'import : ${e.message}`);
+      setTimeout(() => setAppStatus(null), 5000);
+    }
   };
 
   const handleBatchSend = async () => {
@@ -636,7 +670,17 @@ Retourne UNIQUEMENT ce JSON :
             <div style={{ fontWeight:700, fontSize:13, color:"#fff" }}>Charid Youssef</div>
             <div style={{ fontSize:11, color:"#71717a", display:"flex", alignItems:"center", gap:4 }}>
               Business Dev & Growth · Alternance Oct. 2026 · INSEEC Lyon
-              <span style={{ width:6, height:6, borderRadius:"50%", background: "#22c55e", display:"inline-block" }} title="API Key Detected"></span>
+              <span 
+                style={{ 
+                  width:6, 
+                  height:6, 
+                  borderRadius:"50%", 
+                  background: process.env.GEMINI_API_KEY ? "#22c55e" : "#ef4444", 
+                  display:"inline-block",
+                  boxShadow: process.env.GEMINI_API_KEY ? "0 0 8px #22c55e" : "0 0 8px #ef4444"
+                }} 
+                title={process.env.GEMINI_API_KEY ? "Clé API Gemini Détectée" : "Clé API Gemini Manquante"}
+              ></span>
             </div>
           </div>
         </div>
@@ -1129,13 +1173,44 @@ Retourne UNIQUEMENT ce JSON :
               {dynamicTargets.length > 0 && (
                 <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                   <span style={{ fontSize:11, color:"#71717a" }}>{dynamicTargets.length} cibles ajoutées</span>
-                  <button onClick={()=>{ 
-                    const csv = "Entreprise,Decideur,Poste,Email,Score,Note\n"+dynamicTargets.map(t=>`"${t.name}","${t.contacts[0].nom}","${t.contacts[0].poste}","${t.contacts[0].emails[0].addr}","${t.contacts[0].emails[0].score}","${t.contacts[0].emails[0].note}"`).join("\n"); 
-                    const a=document.createElement("a"); a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv); a.download="nouveaux_contacts_lyon.csv"; a.click(); 
-                  }}
-                    style={{ fontSize:10, padding:"3px 8px", borderRadius:6, cursor:"pointer", border:"1px solid #3f3f46", background:"transparent", color:"#a1a1aa" }}>
-                    ⬇ CSV
-                  </button>
+                  <div style={{ display:"flex", gap:4 }}>
+                    <button onClick={copyAllTargetsJSON}
+                      style={{ fontSize:10, padding:"3px 8px", borderRadius:6, cursor:"pointer", border:"1px solid #3f3f46", background:"transparent", color:"#a1a1aa" }}>
+                      📋 Copier JSON
+                    </button>
+                    <button onClick={() => setShowImportArea(!showImportArea)}
+                      style={{ fontSize:10, padding:"3px 8px", borderRadius:6, cursor:"pointer", border:"1px solid #3f3f46", background:"transparent", color:"#a1a1aa" }}>
+                      📥 Importer
+                    </button>
+                    <button onClick={()=>{ 
+                      const csv = "Entreprise,Decideur,Poste,Email,Score,Note\n"+dynamicTargets.map(t=>`"${t.name}","${t.contacts[0].nom}","${t.contacts[0].poste}","${t.contacts[0].emails[0].addr}","${t.contacts[0].emails[0].score}","${t.contacts[0].emails[0].note}"`).join("\n"); 
+                      const a=document.createElement("a"); a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv); a.download="nouveaux_contacts_lyon.csv"; a.click(); 
+                    }}
+                      style={{ fontSize:10, padding:"3px 8px", borderRadius:6, cursor:"pointer", border:"1px solid #3f3f46", background:"transparent", color:"#a1a1aa" }}>
+                      ⬇ CSV
+                    </button>
+                  </div>
+                </div>
+              )}
+              
+              {showImportArea && (
+                <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                  <textarea 
+                    value={importText}
+                    onChange={(e) => setImportText(e.target.value)}
+                    placeholder="Collez le JSON ici..."
+                    style={{ width: "100%", height: 80, background: "#09090b", border: "1px solid #27272a", borderRadius: 8, color: "#fff", fontSize: 11, padding: 8, outline: "none" }}
+                  />
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={handleImportJSON}
+                      style={{ flex: 1, padding: "6px", borderRadius: 8, fontSize: 10, fontWeight: 700, background: "#2563eb", color: "#fff", border: "none", cursor: "pointer" }}>
+                      Confirmer l'import
+                    </button>
+                    <button onClick={() => setShowImportArea(false)}
+                      style={{ flex: 1, padding: "6px", borderRadius: 8, fontSize: 10, fontWeight: 700, background: "transparent", color: "#71717a", border: "1px solid #3f3f46", cursor: "pointer" }}>
+                      Annuler
+                    </button>
+                  </div>
                 </div>
               )}
               {scrapeError && <div style={{ fontSize:10, color:"#f87171", background:"#450a0a", borderRadius:6, padding:"6px 8px" }}>⚠️ {scrapeError}</div>}
@@ -1315,12 +1390,44 @@ Retourne UNIQUEMENT ce JSON :
         <div style={{ flex:1, overflowY:"auto", padding:20, maxWidth:800, margin:"0 auto", width:"100%" }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
             <h2 style={{ fontSize:18, fontWeight:700, color:"#fff", margin:0 }}>📧 Répertoire des emails collectés</h2>
-            <button onClick={()=>{ 
-              const allEmails = [...dynamicTargets, ...TARGETS].flatMap(t => t.contacts.flatMap(c => c.emails.map(e => ({ ...e, entreprise: t.name, nom: c.nom }))));
-              const csv = "Entreprise,Nom,Email,Score,Note\n"+allEmails.map(e=>`"${e.entreprise}","${e.nom}","${e.addr}","${e.score}","${e.note}"`).join("\n");
-              const a=document.createElement("a"); a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv); a.download="repertoire_emails_lyon.csv"; a.click();
-            }} style={{ fontSize:12, padding:"6px 12px", borderRadius:8, cursor:"pointer", border:"1px solid #3f3f46", background:"#18181b", color:"#fff" }}>Exporter CSV</button>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={copyAllTargetsJSON}
+                style={{ fontSize:12, padding:"6px 12px", borderRadius:8, cursor:"pointer", border:"1px solid #3f3f46", background:"#18181b", color:"#fff" }}>
+                📋 Copier JSON
+              </button>
+              <button onClick={() => setShowImportArea(!showImportArea)}
+                style={{ fontSize:12, padding:"6px 12px", borderRadius:8, cursor:"pointer", border:"1px solid #3f3f46", background:"#18181b", color:"#fff" }}>
+                📥 Importer JSON
+              </button>
+              <button onClick={()=>{ 
+                const allEmails = [...dynamicTargets, ...TARGETS].flatMap(t => t.contacts.flatMap(c => c.emails.map(e => ({ ...e, entreprise: t.name, nom: c.nom }))));
+                const csv = "Entreprise,Nom,Email,Score,Note\n"+allEmails.map(e=>`"${e.entreprise}","${e.nom}","${e.addr}","${e.score}","${e.note}"`).join("\n");
+                const a=document.createElement("a"); a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv); a.download="repertoire_emails_lyon.csv"; a.click();
+              }} style={{ fontSize:12, padding:"6px 12px", borderRadius:8, cursor:"pointer", border:"1px solid #3f3f46", background:"#18181b", color:"#fff" }}>Exporter CSV</button>
+            </div>
           </div>
+
+          {showImportArea && (
+            <div style={{ marginBottom: 20, background: "#18181b", border: "1px solid #27272a", borderRadius: 10, padding: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", marginBottom: 8 }}>Importer des cibles (Format JSON)</div>
+              <textarea 
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                placeholder="Collez ici le JSON copié depuis l'autre instance..."
+                style={{ width: "100%", height: 120, background: "#09090b", border: "1px solid #27272a", borderRadius: 8, color: "#fff", fontSize: 12, padding: 10, outline: "none", marginBottom: 10 }}
+              />
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={handleImportJSON}
+                  style={{ flex: 1, padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: "#2563eb", color: "#fff", border: "none", cursor: "pointer" }}>
+                  Confirmer l'importation
+                </button>
+                <button onClick={() => setShowImportArea(false)}
+                  style={{ flex: 1, padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: "transparent", color: "#71717a", border: "1px solid #3f3f46", cursor: "pointer" }}>
+                  Annuler
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Draft Area */}
           {(loadingDraft || emailDraft || draftError) && (
