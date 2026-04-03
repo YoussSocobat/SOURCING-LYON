@@ -689,10 +689,15 @@ Retourne UNIQUEMENT ce JSON :
                   </button>
                 </>
               )}
-              <button onClick={fetchOffers} disabled={loadingOffers || cooldown > 0}
-                style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 22px", borderRadius:10, fontWeight:700, fontSize:13, cursor:(loadingOffers || cooldown > 0)?"not-allowed":"pointer", border:"none", background:(loadingOffers || cooldown > 0)?"#27272a":"#2563eb", color:(loadingOffers || cooldown > 0)?"#71717a":"#fff", boxShadow:(loadingOffers || cooldown > 0)?"none":"0 0 20px rgba(37,99,235,0.35)" }}>
+              <button 
+                onClick={() => {
+                  if (loadingOffers) setLoadingOffers(false);
+                  else fetchOffers();
+                }} 
+                disabled={!loadingOffers && cooldown > 0}
+                style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 22px", borderRadius:10, fontWeight:700, fontSize:13, cursor:(!loadingOffers && cooldown > 0)?"not-allowed":"pointer", border:"none", background:(!loadingOffers && cooldown > 0)?"#27272a":"#2563eb", color:(!loadingOffers && cooldown > 0)?"#71717a":"#fff", boxShadow:(!loadingOffers && cooldown > 0)?"none":"0 0 20px rgba(37,99,235,0.35)" }}>
                 <span style={{ display:"inline-block", animation:loadingOffers?"spin 0.8s linear infinite":"none" }}>⟳</span>
-                {loadingOffers ? "Chargement…" : cooldown > 0 ? `Attendre ${cooldown}s` : "Refresh Live"}
+                {loadingOffers ? "Annuler" : cooldown > 0 ? `Attendre ${cooldown}s` : "Refresh Live"}
               </button>
             </div>
           </div>
