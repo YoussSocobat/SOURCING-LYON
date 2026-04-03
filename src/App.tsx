@@ -96,6 +96,122 @@ export default function App() {
   // Preview Modal
   const [previewEmail, setPreviewEmail] = useState<{ target: any, emailAddr: string, subject: string, body: string } | null>(null);
   
+  // Batch selection
+  const [batchSelection, setBatchSelection] = useState<Set<string | number>>(new Set());
+  const [isBatchSending, setIsBatchSending] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
+  
+  const toggleBatch = (id: string | number) => {
+    setBatchSelection(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllOffers = () => {
+    const ids = filteredOffers.filter(o => o.email).map(o => o.id);
+    setBatchSelection(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.add(id));
+      return next;
+    });
+  };
+
+  const selectAllSourcing = () => {
+    const ids = [...dynamicTargets, ...TARGETS].map(t => t.id);
+    setBatchSelection(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.add(id));
+      return next;
+    });
+  };
+
+  const deselectAll = () => setBatchSelection(new Set());
+
+  const deleteTarget = (id: string | number) => {
+    setDynamicTargets(prev => prev.filter(t => t.id !== id));
+    setBatchSelection(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  const clearAllDynamicTargets = () => {
+    if (window.confirm("Voulez-vous vraiment effacer TOUS les nouveaux emails scrapés ?")) {
+      setDynamicTargets([]);
+      setBatchSelection(new Set());
+    }
+  };
+
+  const handleBatchSend = async () => {
+    if (batchSelection.size === 0) return;
+    if (!gmailConnected || !cvFile) {
+      alert("Veuillez connecter Gmail et charger un CV avant d'envoyer.");
+      return;
+    }
+
+    const targetsToSend = [...dynamicTargets, ...TARGETS].filter(t => batchSelection.has(t.id));
+    
+    if (!window.confirm(`Voulez-vous vraiment envoyer ${targetsToSend.length} candidatures personnalisées d'un coup ?`)) {
+      return;
+    }
+
+    setIsBatchSending(true);
+    setBatchProgress({ current: 0, total: targetsToSend.length });
+    setAppStatus(`Envoi groupé en cours : 0/${targetsToSend.length}...`);
+
+    for (let i = 0; i < targetsToSend.length; i++) {
+      const target = targetsToSend[i];
+      setBatchProgress({ current: i + 1, total: targetsToSend.length });
+      
+      try {
+        const jobTitle = target.titre || target.secteur || "Alternant Marketing Digital";
+        const company = target.entreprise || target.name;
+        const description = target.description || target.pertinence || "";
+        const recruiterName = target.contacts?.[0]?.nom;
+        const emailAddr = target.contacts?.[0]?.emails?.[0]?.addr || target.emailsEntreprise?.[0]?.addr;
+
+        if (!emailAddr) continue;
+
+        setAppStatus(`[${i + 1}/${targetsToSend.length}] Génération pour ${target.name}...`);
+
+        // 1. Generate
+        const body = await generateApplicationEmail(jobTitle, company, description, recruiterName);
+        const subject = `Candidature Alternance - ${jobTitle} - Charid Youssef`;
+
+        setAppStatus(`[${i + 1}/${targetsToSend.length}] Envoi à ${target.name}...`);
+
+        // 2. Send
+        const res = await fetch('/api/send-application', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ to: emailAddr, subject, body })
+        });
+
+        if (res.ok) {
+          setApplied(prev => ({ ...prev, [target.id]: true }));
+        }
+        
+        // Increased delay to avoid rate limits
+        await new Promise(r => setTimeout(r, 3000));
+
+      } catch (e: any) {
+        console.error(`Error sending to ${target.name}:`, e);
+        setAppStatus(`⚠️ Erreur pour ${target.name}: ${e.message}`);
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+
+    setIsBatchSending(false);
+    setAppStatus(`${targetsToSend.length} candidatures traitées !`);
+    setBatchSelection(new Set());
+    setTimeout(() => setAppStatus(null), 5000);
+  };
+  
   const checkAuthStatus = async () => {
     setCheckingAuth(true);
     try {
@@ -261,32 +377,27 @@ export default function App() {
     setLoadingOffers(true);
     setApiError(null);
     try {
-      const prompt = `Tu es un assistant expert en recrutement et sourcing. UTILISE GOOGLE SEARCH pour trouver des offres d'alternance RÉELLES, ACTUELLES et VÉRIFIÉES (publiées il y a moins de 15 jours) pour Charid Youssef (étudiant Master INSEEC Lyon).
+      const prompt = `Tu es un assistant expert en recrutement et sourcing de HAUT NIVEAU. UTILISE GOOGLE SEARCH pour trouver des offres d'alternance RÉELLES, ACTUELLES et VÉRIFIÉES (publiées il y a moins de 15 jours) pour Charid Youssef (étudiant Master INSEEC Lyon).
 
 DOMAINES CIBLÉS : Communication, Marketing Digital, Growth Marketing, E-commerce, Business Developer, IA Automation.
-PROFIL : Débutant motivé cherchant à monter en compétences sur les outils Ads (Meta/Google) et SEO. Passionné par l'IA (automatisation n8n, agents IA).
+PROFIL : Débutant motivé, expert en IA (n8n, agents IA), cherchant une alternance pour Octobre 2026.
 LIEU : Lyon et sa région (rayon ${radius}km).
-CIBLE : Entreprises innovantes, startups tech, agences digital/growth, et PME dynamiques.
+CIBLE : Startups tech, agences digital/growth, et PME innovantes.
 
 SOURCES OBLIGATOIRES (VÉRIFIE LES LIENS) :
-1. Indeed, Hellowork, La Bonne Alternance, Meteojob, LinkedIn, Welcome to the Jungle.
-2. SITES CARRIÈRES directs des entreprises lyonnaises (ex: Cegid, GL Events, LDLC, startups de H7, etc.).
+1. Indeed, Hellowork, La Bonne Alternance, LinkedIn, Welcome to the Jungle.
+2. SITES CARRIÈRES directs des entreprises (ex: Cegid, GL Events, LDLC, startups de H7, etc.).
 
 CONSIGNES DE QUALITÉ (CRITICAL) :
-- NE DONNE PAS D'OFFRES EXPIRÉES ou de liens morts (404). Vérifie que l'annonce est toujours en ligne.
+- NE DONNE PAS D'OFFRES EXPIRÉES ou de liens morts (404).
 - EXCLURE TOUTES LES ÉCOLES et centres de formation.
 - Trouve au moins 15-20 offres distinctes.
-- Priorise les offres publiées DIRECTEMENT sur le site de l'entreprise.
+- PRIORITÉ ABSOLUE : Trouver l'adresse email directe du recruteur ou du responsable (ex: prenom.nom@entreprise.com).
+- Si l'email n'est pas sur l'annonce, cherche sur le site de l'entreprise ou déduis-le via le nom du responsable.
 
-IMPORTANT (EFFORT MAXIMUM REQUIS) : Pour CHAQUE offre, tu DOIS faire un effort particulier pour trouver l'adresse email directe du recruteur ou du responsable. 
-- Cherche sur la page de l'offre, mais aussi sur le site carrière de l'entreprise.
-- Si l'email n'est pas sur l'annonce, essaie de déduire l'email du responsable RH ou du CEO (ex: rh@entreprise.com, jobs@, ou prenom.nom@).
-- Indique l'email uniquement si tu as une forte présomption de validité.
-
-Retourne UNIQUEMENT ce JSON (aucun autre texte, aucune explication) :
-{"offres":[{"titre":"","entreprise":"","ville":"","contrat":"Alternance","salaire":"","description":"","date":"YYYY-MM-DD","url":"LIEN_DIRECT_ET_VALIDE","email":"EMAIL_TROUVE_OU_PROBABLE","source":"NOM_DU_SITE"}]}
-
-Si aucun email n'est trouvé malgré tes recherches, laisse le champ "email" vide.`;
+Retourne UNIQUEMENT ce JSON :
+{"offres":[{"titre":"","entreprise":"","ville":"","contrat":"Alternance","salaire":"","description":"","date":"YYYY-MM-DD","url":"LIEN_DIRECT_ET_VALIDE","email":"EMAIL_DIRECT_NOMINATIF","source":"NOM_DU_SITE"}]}
+`;
 
       const text = await callGemini(prompt, true);
       const parsed = parseJSON(text);
@@ -366,14 +477,25 @@ Si aucun email n'est trouvé malgré tes recherches, laisse le champ "email" vid
     const queries = shuffled.slice(0, 3).join(" | ");
 
     try {
-      const text = await callGemini(
-        `Recherche des entreprises réelles à Lyon via Google Search pour ces catégories : ${queries}.
-Identifie les décideurs (CEO, Head of Growth, Marketing) et leurs emails probables.
-
-Retourne UNIQUEMENT ce JSON (aucun autre texte) :
-{"contacts":[{"entreprise":"","site":"","ville":"Lyon","decideur":"Nom","poste":"Poste","email_probable":"email","email_format":"format","score":"🟢","score_label":"Fiable","source":"Source","note":"Note"}]}`,
-        true
-      );
+      const prompt = `Tu es un assistant expert en sourcing B2B de HAUT NIVEAU. UTILISE GOOGLE SEARCH pour trouver des entreprises et des décideurs RÉELS à Lyon.
+      
+      OBJECTIF : Trouver 15 nouvelles entreprises (Startups tech, Agences Growth/Digital, PME innovantes) qui pourraient recruter un alternant en Growth/Marketing Digital.
+      
+      POUR CHAQUE ENTREPRISE, TU DOIS TROUVER :
+      1. Le nom de l'entreprise et son secteur.
+      2. Le nom d'un décideur PRÉCIS (CEO, Head of Marketing, ou Responsable RH).
+      3. L'adresse email DIRECTE et NOMINATIVE (ex: prenom.nom@entreprise.com).
+      
+      CRITÈRES DE QUALITÉ (CRITICAL) :
+      - NE DONNE PAS d'emails génériques (contact@, info@, hello@) SAUF si c'est la seule option après recherche intense.
+      - Priorise les entreprises qui ont levé des fonds récemment ou qui sont en croissance à Lyon.
+      - Vérifie que l'entreprise existe toujours.
+      - Essaie de déduire l'email si tu as le nom du décideur et le domaine (formats courants: p.nom@, prenom@, prenom.n@).
+      
+      Retourne UNIQUEMENT ce JSON :
+      {"contacts":[{"entreprise":"","site":"","ville":"Lyon","decideur":"Nom","poste":"Poste","email_probable":"email","email_format":"format","score":"🟢","score_label":"Fiable","source":"Source","note":"Note"}]}
+      `;
+      const text = await callGemini(prompt, true);
       const parsed = parseJSON(text);
       let contacts = [];
       if (Array.isArray(parsed)) {
@@ -532,11 +654,32 @@ Retourne UNIQUEMENT ce JSON :
                 {f}
               </button>
             ))}
-            <button onClick={fetchOffers} disabled={loadingOffers || cooldown > 0}
-              style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:8, padding:"8px 22px", borderRadius:10, fontWeight:700, fontSize:13, cursor:(loadingOffers || cooldown > 0)?"not-allowed":"pointer", border:"none", background:(loadingOffers || cooldown > 0)?"#27272a":"#2563eb", color:(loadingOffers || cooldown > 0)?"#71717a":"#fff", boxShadow:(loadingOffers || cooldown > 0)?"none":"0 0 20px rgba(37,99,235,0.35)" }}>
-              <span style={{ display:"inline-block", animation:loadingOffers?"spin 0.8s linear infinite":"none" }}>⟳</span>
-              {loadingOffers ? "Chargement…" : cooldown > 0 ? `Attendre ${cooldown}s` : "Refresh Live"}
-            </button>
+            
+            <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+              {filteredOffers.some(o => o.email) && (
+                <button onClick={selectAllOffers}
+                  style={{ padding:"7px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", border:"1px solid #3f3f46", background:"transparent", color:"#a1a1aa" }}>
+                  Tout sélectionner
+                </button>
+              )}
+              {batchSelection.size > 0 && (
+                <>
+                  <button onClick={deselectAll}
+                    style={{ padding:"7px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", border:"1px solid #3f3f46", background:"transparent", color:"#a1a1aa" }}>
+                    Désélectionner
+                  </button>
+                  <button onClick={handleBatchSend} disabled={isBatchSending}
+                    style={{ padding:"7px 16px", borderRadius:8, fontSize:11, fontWeight:700, cursor:isBatchSending?"not-allowed":"pointer", border:"none", background:"#16a34a", color:"#fff", boxShadow: "0 0 15px rgba(22,163,74,0.3)" }}>
+                    🚀 Postuler ({batchSelection.size})
+                  </button>
+                </>
+              )}
+              <button onClick={fetchOffers} disabled={loadingOffers || cooldown > 0}
+                style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 22px", borderRadius:10, fontWeight:700, fontSize:13, cursor:(loadingOffers || cooldown > 0)?"not-allowed":"pointer", border:"none", background:(loadingOffers || cooldown > 0)?"#27272a":"#2563eb", color:(loadingOffers || cooldown > 0)?"#71717a":"#fff", boxShadow:(loadingOffers || cooldown > 0)?"none":"0 0 20px rgba(37,99,235,0.35)" }}>
+                <span style={{ display:"inline-block", animation:loadingOffers?"spin 0.8s linear infinite":"none" }}>⟳</span>
+                {loadingOffers ? "Chargement…" : cooldown > 0 ? `Attendre ${cooldown}s` : "Refresh Live"}
+              </button>
+            </div>
           </div>
 
           {/* Stats */}
@@ -585,64 +728,76 @@ Retourne UNIQUEMENT ce JSON :
                 const isExp = expandedOffer===i;
                 return (
                   <div key={i} style={{ background:"#18181b", border:"1px solid "+(isToday?"#7f1d1d":isRecent?"#451a03":"#27272a"), borderRadius:12, padding:"14px 16px" }}>
-                    <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12, flexWrap:"wrap" }}>
+                    <div style={{ display:"flex", alignItems:"flex-start", gap:12 }}>
+                      {o.email && (
+                        <input 
+                          type="checkbox" 
+                          checked={batchSelection.has(o.id)} 
+                          onChange={(e) => { e.stopPropagation(); toggleBatch(o.id); }}
+                          style={{ marginTop: 6, cursor: "pointer", width: 16, height: 16 }}
+                        />
+                      )}
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:7, flexWrap:"wrap", marginBottom:4 }}>
-                          {isToday&&<span style={{ fontSize:10, fontWeight:700, background:"#7f1d1d", color:"#fca5a5", padding:"2px 7px", borderRadius:20 }}>🔴 NOUVEAU</span>}
-                          {!isToday&&isRecent&&<span style={{ fontSize:10, fontWeight:700, background:"#451a03", color:"#fdba74", padding:"2px 7px", borderRadius:20 }}>🟡 RÉCENT</span>}
-                          {o.email&&<span style={{ fontSize:10, fontWeight:700, background:"#052e16", color:"#4ade80", padding:"2px 7px", borderRadius:20 }}>📧 Email direct</span>}
-                          <span style={{ fontWeight:700, fontSize:14, color:"#fff" }}>{o.titre||"Offre d'alternance"}</span>
-                        </div>
-                        <div style={{ fontSize:13, color:"#a1a1aa", fontWeight:500 }}>{o.entreprise}</div>
-                        <div style={{ display:"flex", gap:10, marginTop:5, fontSize:11, color:"#71717a", flexWrap:"wrap" }}>
-                          {o.ville&&<span>📍 {o.ville}</span>}
-                          {o.contrat&&<span>📄 {o.contrat}</span>}
-                          {o.salaire&&<span>💶 {o.salaire}</span>}
-                          {o.date&&<span style={{ color:isToday?"#f87171":isRecent?"#fbbf24":"#71717a", fontWeight:600 }}>{ageLabel(o.date)}</span>}
-                          {o.source&&<span style={{ background:"#27272a", padding:"1px 6px", borderRadius:4 }}>{o.source}</span>}
-                        </div>
-                      </div>
-                      <div style={{ display:"flex", flexDirection:"column", gap:6, alignItems:"flex-end", flexShrink:0 }}>
-                        <div style={{ display:"flex", gap:5 }}>
-                          <button onClick={()=>setSaved(p=>({...p,[i]:!p[i]}))}
-                            style={{ padding:"5px 9px", borderRadius:7, fontSize:12, cursor:"pointer", border:"1px solid "+(saved[i]?"#ca8a04":"#3f3f46"), background:saved[i]?"#422006":"transparent", color:saved[i]?"#fbbf24":"#71717a" }}>
-                            {saved[i]?"🔖":"☆"}
-                          </button>
-                          <button onClick={()=>setApplied(p=>({...p,[o.id]:!p[o.id]}))}
-                            style={{ padding:"5px 11px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", border:"1px solid "+(applied[o.id]?"#16a34a":"#3f3f46"), background:applied[o.id]?"#052e16":"transparent", color:applied[o.id]?"#4ade80":"#a1a1aa" }}>
-                            {applied[o.id]?"✓ Postulé":"Cocher"}
-                          </button>
-                          {o.url&&<a href={o.url} target="_blank" rel="noreferrer" style={{ padding:"5px 11px", borderRadius:7, fontSize:11, fontWeight:600, textDecoration:"none", border:"1px solid #1e40af", background:"#1e3a8a", color:"#93c5fd" }}>Voir →</a>}
-                        </div>
-                        {o.email&&(
-                          <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
-                            <span style={{ fontSize: 9, color: "#4ade80", fontWeight: 700, textTransform: "uppercase" }}>Contact Direct :</span>
-                            <div style={{ display: "flex", gap: 4 }}>
-                              <button onClick={()=>copy(o.email,"oe-"+i)} style={{ padding:"4px 12px", borderRadius:7, fontSize:11, cursor:"pointer", border:"1px solid #15803d", background:"#052e16", color:"#4ade80", fontFamily:"monospace", fontWeight: 600 }}>
-                                {copied==="oe-"+i?"✓ Copié":o.email}
-                              </button>
-                              <button 
-                                onClick={() => handleSendApplication(o, o.email)}
-                                disabled={sendingAppId === o.id || !gmailConnected || !cvFile}
-                                style={{ 
-                                  padding:"4px 12px", 
-                                  borderRadius:7, 
-                                  fontSize:11, 
-                                  cursor:(sendingAppId === o.id || !gmailConnected || !cvFile) ? "not-allowed" : "pointer", 
-                                  border:"1px solid #2563eb", 
-                                  background:applied[o.id] ? "#1e3a8a" : "#2563eb", 
-                                  color:"#fff", 
-                                  fontWeight: 700,
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 4
-                                }}
-                              >
-                                {sendingAppId === o.id ? "..." : applied[o.id] ? "✓ Envoyé" : "🚀 Postuler"}
-                              </button>
+                        <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12, flexWrap:"wrap" }}>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ display:"flex", alignItems:"center", gap:7, flexWrap:"wrap", marginBottom:4 }}>
+                              {isToday&&<span style={{ fontSize:10, fontWeight:700, background:"#7f1d1d", color:"#fca5a5", padding:"2px 7px", borderRadius:20 }}>🔴 NOUVEAU</span>}
+                              {!isToday&&isRecent&&<span style={{ fontSize:10, fontWeight:700, background:"#451a03", color:"#fdba74", padding:"2px 7px", borderRadius:20 }}>🟡 RÉCENT</span>}
+                              {o.email&&<span style={{ fontSize:10, fontWeight:700, background:"#052e16", color:"#4ade80", padding:"2px 7px", borderRadius:20 }}>📧 Email direct</span>}
+                              <span style={{ fontWeight:700, fontSize:14, color:"#fff" }}>{o.titre||"Offre d'alternance"}</span>
+                            </div>
+                            <div style={{ fontSize:13, color:"#a1a1aa", fontWeight:500 }}>{o.entreprise}</div>
+                            <div style={{ display:"flex", gap:10, marginTop:5, fontSize:11, color:"#71717a", flexWrap:"wrap" }}>
+                              {o.ville&&<span>📍 {o.ville}</span>}
+                              {o.contrat&&<span>📄 {o.contrat}</span>}
+                              {o.salaire&&<span>💶 {o.salaire}</span>}
+                              {o.date&&<span style={{ color:isToday?"#f87171":isRecent?"#fbbf24":"#71717a", fontWeight:600 }}>{ageLabel(o.date)}</span>}
+                              {o.source&&<span style={{ background:"#27272a", padding:"1px 6px", borderRadius:4 }}>{o.source}</span>}
                             </div>
                           </div>
-                        )}
+                          <div style={{ display:"flex", flexDirection:"column", gap:6, alignItems:"flex-end", flexShrink:0 }}>
+                            <div style={{ display:"flex", gap:5 }}>
+                              <button onClick={()=>setSaved(p=>({...p,[i]:!p[i]}))}
+                                style={{ padding:"5px 9px", borderRadius:7, fontSize:12, cursor:"pointer", border:"1px solid "+(saved[i]?"#ca8a04":"#3f3f46"), background:saved[i]?"#422006":"transparent", color:saved[i]?"#fbbf24":"#71717a" }}>
+                                {saved[i]?"🔖":"☆"}
+                              </button>
+                              <button onClick={()=>setApplied(p=>({...p,[o.id]:!p[o.id]}))}
+                                style={{ padding:"5px 11px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", border:"1px solid "+(applied[o.id]?"#16a34a":"#3f3f46"), background:applied[o.id]?"#052e16":"transparent", color:applied[o.id]?"#4ade80":"#a1a1aa" }}>
+                                {applied[o.id]?"✓ Postulé":"Cocher"}
+                              </button>
+                              {o.url&&<a href={o.url} target="_blank" rel="noreferrer" style={{ padding:"5px 11px", borderRadius:7, fontSize:11, fontWeight:600, textDecoration:"none", border:"1px solid #1e40af", background:"#1e3a8a", color:"#93c5fd" }}>Voir →</a>}
+                            </div>
+                            {o.email&&(
+                              <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
+                                <span style={{ fontSize: 9, color: "#4ade80", fontWeight: 700, textTransform: "uppercase" }}>Contact Direct :</span>
+                                <div style={{ display: "flex", gap: 4 }}>
+                                  <button onClick={()=>copy(o.email,"oe-"+i)} style={{ padding:"4px 12px", borderRadius:7, fontSize:11, cursor:"pointer", border:"1px solid #15803d", background:"#052e16", color:"#4ade80", fontFamily:"monospace", fontWeight: 600 }}>
+                                    {copied==="oe-"+i?"✓ Copié":o.email}
+                                  </button>
+                                  <button 
+                                    onClick={() => handleSendApplication(o, o.email)}
+                                    disabled={sendingAppId === o.id || !gmailConnected || !cvFile}
+                                    style={{ 
+                                      padding:"4px 12px", 
+                                      borderRadius:7, 
+                                      fontSize:11, 
+                                      cursor:(sendingAppId === o.id || !gmailConnected || !cvFile) ? "not-allowed" : "pointer", 
+                                      border:"1px solid #2563eb", 
+                                      background:applied[o.id] ? "#1e3a8a" : "#2563eb", 
+                                      color:"#fff", 
+                                      fontWeight: 700,
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 4
+                                    }}
+                                  >
+                                    {sendingAppId === o.id ? "..." : applied[o.id] ? "✓ Envoyé" : "🚀 Postuler"}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
                     {o.description&&(
@@ -888,9 +1043,41 @@ Retourne UNIQUEMENT ce JSON :
                 <span style={{ display:"inline-block", animation:loadingScrape?"spin 0.8s linear infinite":"none", fontSize:15 }}>🔍</span>
                 {loadingScrape ? "Scraping Maps…" : cooldown > 0 ? `Attendre ${cooldown}s` : "Scraper 15 nouveaux emails"}
               </button>
+              
+              <div style={{ display:"flex", gap:6 }}>
+                <button onClick={selectAllSourcing}
+                  style={{ flex:1, padding:"6px", borderRadius:8, fontSize:10, fontWeight:600, cursor:"pointer", border:"1px solid #3f3f46", background:"transparent", color:"#a1a1aa" }}>
+                  Tout sélectionner
+                </button>
+                <button onClick={clearAllDynamicTargets}
+                  style={{ flex:1, padding:"6px", borderRadius:8, fontSize:10, fontWeight:600, cursor:"pointer", border:"1px solid #450a0a", background:"transparent", color:"#f87171" }}>
+                  🗑️ Tout effacer
+                </button>
+              </div>
+              {batchSelection.size > 0 && (
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={deselectAll}
+                    style={{ flex:1, padding:"6px", borderRadius:8, fontSize:10, fontWeight:600, cursor:"pointer", border:"1px solid #3f3f46", background:"transparent", color:"#a1a1aa" }}>
+                    Désélectionner
+                  </button>
+                  <button onClick={() => {
+                    const ids = Array.from(batchSelection);
+                    setDynamicTargets(prev => prev.filter(t => !ids.includes(t.id)));
+                    setBatchSelection(new Set());
+                  }}
+                    style={{ flex:1, padding:"6px", borderRadius:8, fontSize:10, fontWeight:600, cursor:"pointer", border:"1px solid #991b1b", background:"#450a0a", color:"#fca5a5" }}>
+                    🗑️ Supprimer ({batchSelection.size})
+                  </button>
+                  <button onClick={handleBatchSend} disabled={isBatchSending}
+                    style={{ flex:2, padding:"6px", borderRadius:8, fontSize:10, fontWeight:700, cursor:isBatchSending?"not-allowed":"pointer", border:"none", background:"#16a34a", color:"#fff", boxShadow: "0 0 15px rgba(22,163,74,0.3)" }}>
+                    🚀 Envoyer {batchSelection.size} mails
+                  </button>
+                </div>
+              )}
+
               {dynamicTargets.length > 0 && (
                 <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                  <span style={{ fontSize:11, color:"#71717a" }}>{dynamicTargets.length} cibles ajoutées · {scrapeCount}x refresh</span>
+                  <span style={{ fontSize:11, color:"#71717a" }}>{dynamicTargets.length} cibles ajoutées</span>
                   <button onClick={()=>{ 
                     const csv = "Entreprise,Decideur,Poste,Email,Score,Note\n"+dynamicTargets.map(t=>`"${t.name}","${t.contacts[0].nom}","${t.contacts[0].poste}","${t.contacts[0].emails[0].addr}","${t.contacts[0].emails[0].score}","${t.contacts[0].emails[0].note}"`).join("\n"); 
                     const a=document.createElement("a"); a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv); a.download="nouveaux_contacts_lyon.csv"; a.click(); 
@@ -909,10 +1096,16 @@ Retourne UNIQUEMENT ce JSON :
             </div>
             <div style={{ flex:1, overflowY:"auto" }}>
               {[...dynamicTargets, ...TARGETS].map(t=>(
-                <div key={t.id} onClick={()=>setSelected(t)}
-                  style={{ padding:"11px 13px", borderBottom:"1px solid #1c1c1e", cursor:"pointer", background:selected?.id===t.id?"#1e2a3a":"transparent", borderLeft:selected?.id===t.id?"2px solid #3b82f6":"2px solid transparent" }}>
-                  <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:5 }}>
-                    <div style={{ minWidth:0 }}>
+                <div key={t.id} 
+                  style={{ padding:"11px 13px", borderBottom:"1px solid #1c1c1e", cursor:"pointer", background:selected?.id===t.id?"#1e2a3a":"transparent", borderLeft:selected?.id===t.id?"2px solid #3b82f6":"2px solid transparent", position:"relative" }}>
+                  <div style={{ display:"flex", alignItems:"flex-start", gap:10 }}>
+                    <input 
+                      type="checkbox" 
+                      checked={batchSelection.has(t.id)} 
+                      onChange={(e) => { e.stopPropagation(); toggleBatch(t.id); }}
+                      style={{ marginTop: 4, cursor: "pointer" }}
+                    />
+                    <div style={{ flex:1, minWidth:0 }} onClick={()=>setSelected(t)}>
                       <div style={{ display:"flex", alignItems:"center", gap:5, flexWrap:"wrap" }}>
                         <span style={{ fontWeight:700, fontSize:12, color:"#fff" }}>{t.name}</span>
                         {t.offreActive&&<span style={{ fontSize:9, background:"#052e16", color:"#4ade80", padding:"1px 4px", borderRadius:3, fontWeight:700 }}>OFFRE</span>}
@@ -920,7 +1113,17 @@ Retourne UNIQUEMENT ce JSON :
                       <div style={{ fontSize:10, color:"#71717a", marginTop:1 }}>{t.secteur}</div>
                       <span style={{ fontSize:9, fontWeight:700, padding:"2px 5px", borderRadius:3, background:TAG_BG[t.tag]||"#27272a", color:TAG_FX[t.tag]||"#a1a1aa" }}>{t.tag}</span>
                     </div>
-                    <span style={{ fontSize:10, color:"#52525b", flexShrink:0 }}>{t.taille}</span>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                      <span style={{ fontSize:10, color:"#52525b", flexShrink:0 }}>{t.taille}</span>
+                      {typeof t.id === 'string' && t.id.startsWith('off-') && (
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); deleteTarget(t.id); }}
+                          style={{ background: "none", border: "none", color: "#451a03", cursor: "pointer", padding: 0 }}
+                        >
+                          🗑️
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}

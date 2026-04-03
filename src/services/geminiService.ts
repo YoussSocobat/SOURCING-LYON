@@ -37,13 +37,18 @@ export async function callGemini(prompt: string, useSearch = false, retryCount =
     return response.text;
   } catch (error: any) {
     console.error("Gemini API Error:", error);
-    if (error.message?.includes("429") && retryCount < 2) {
-      console.log(`Rate limit hit, retrying in ${5 * (retryCount + 1)}s...`);
-      await new Promise(resolve => setTimeout(resolve, 5000 * (retryCount + 1)));
+    
+    // Handle 429 with exponential backoff
+    const isRateLimit = error.message?.includes("429") || error.status === 429;
+    if (isRateLimit && retryCount < 5) {
+      const delay = Math.pow(2, retryCount) * 3000 + Math.random() * 1000;
+      console.log(`Rate limit hit (429), retrying in ${Math.round(delay/1000)}s... (Attempt ${retryCount + 1}/5)`);
+      await new Promise(resolve => setTimeout(resolve, delay));
       return callGemini(prompt, useSearch, retryCount + 1);
     }
-    if (error.message?.includes("429")) {
-      throw new Error("Limite de requêtes atteinte (429). Veuillez patienter une minute avant de réessayer.");
+    
+    if (isRateLimit) {
+      throw new Error("⚠️ Limite de requêtes atteinte (429). Veuillez patienter une minute avant de réessayer.");
     }
     throw error;
   }

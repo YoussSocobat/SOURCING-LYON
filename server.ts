@@ -2,15 +2,24 @@ import express, { Request, Response } from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import { google } from "googleapis";
-import session from "express-session";
+import session, { SessionData } from "express-session";
 import multer from "multer";
 import dotenv from "dotenv";
+
+// Extend Express Session type
+declare module "express-session" {
+  interface SessionData {
+    tokens?: any;
+    isAuth?: boolean;
+    redirectUri?: string;
+  }
+}
 
 // Extend Express Request type
 declare global {
   namespace Express {
     interface Request {
-      session: any;
+      session: session.Session & Partial<SessionData>;
       file?: any;
     }
   }
