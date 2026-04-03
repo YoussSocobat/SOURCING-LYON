@@ -249,15 +249,15 @@ export default function App() {
     try {
       const prompt = `Tu es un assistant expert en recrutement et sourcing. UTILISE GOOGLE SEARCH pour trouver des offres d'alternance RÉELLES et ACTUELLES (publiées il y a moins de 15 jours) pour Charid Youssef (étudiant Master INSEEC Lyon).
 
-DOMAINES CIBLÉS : Marketing Digital, Growth Marketing, E-commerce, Business Developer, IA Automation.
-PROFIL : Débutant motivé en Ads (Meta/Google) et SEO cherchant à monter en compétences. Passionné par l'avant-garde de l'IA apprise en autodidacte : Vibecoding, Claude Code, Agents IA via OpenClaw, et automatisation via n8n.
+DOMAINES CIBLÉS : Communication, Marketing Digital, Growth Marketing, E-commerce, Business Developer, IA Automation.
+PROFIL : Débutant motivé cherchant à monter en compétences sur les outils Ads (Meta/Google) et SEO. Passionné par l'IA (automatisation n8n, agents IA).
 LIEU : Lyon et sa région (rayon ${radius}km).
-CIBLE : Entreprises innovantes, startups tech, agences digital/growth qui valorisent l'IA et l'automatisation.
+CIBLE : Entreprises innovantes, startups tech, agences digital/growth, et PME dynamiques.
 
 CRITÈRES EXCLUSIFS (TRÈS IMPORTANT) :
 - EXCLURE TOUTES LES ÉCOLES et centres de formation.
-- Cherche sur TOUS les sites : Indeed, Hellowork, La Bonne Alternance, LinkedIn, Welcome to the Jungle, sites carrières.
-- Trouve au moins 12-15 offres distinctes.
+- Cherche sur TOUS les sites : Indeed, Hellowork, La Bonne Alternance, LinkedIn, Welcome to the Jungle, et SURTOUT les SITES CARRIÈRES des entreprises lyonnaises.
+- Trouve au moins 15-20 offres distinctes.
 
 IMPORTANT (EFFORT MAXIMUM REQUIS) : Pour CHAQUE offre, tu DOIS faire un effort particulier pour trouver l'adresse email directe du recruteur ou du responsable. 
 - Cherche sur la page de l'offre, mais aussi sur le site carrière de l'entreprise.
@@ -1081,8 +1081,8 @@ Retourne UNIQUEMENT ce JSON :
                   style={{ width:"100%", height:300, fontSize:14, color:"#cbd5e1", background:"#09090b", padding:"12px", borderRadius:8, border:"1px solid #27272a", lineHeight:1.5, resize:"none" }} 
                 />
               </div>
-              <div style={{ fontSize:12, color:"#71717a", display:"flex", alignItems:"center", gap:8 }}>
-                <FileText size={14} /> Pièce jointe : {cvFile}
+              <div style={{ fontSize:12, color: cvFile ? "#71717a" : "#ef4444", display:"flex", alignItems:"center", gap:8, fontWeight: cvFile ? 400 : 700 }}>
+                <FileText size={14} /> {cvFile ? `Pièce jointe : ${cvFile}` : "⚠️ AUCUN CV TÉLÉCHARGÉ ! L'email sera envoyé sans pièce jointe."}
               </div>
             </div>
             <div style={{ padding:20, borderTop:"1px solid #27272a", display:"flex", gap:12 }}>

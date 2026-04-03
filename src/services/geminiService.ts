@@ -13,7 +13,7 @@ function getAi() {
   return aiInstance;
 }
 
-export async function callGemini(prompt: string, useSearch = false) {
+export async function callGemini(prompt: string, useSearch = false, retryCount = 0) {
   try {
     const ai = getAi();
     const config: any = {};
@@ -37,8 +37,13 @@ export async function callGemini(prompt: string, useSearch = false) {
     return response.text;
   } catch (error: any) {
     console.error("Gemini API Error:", error);
+    if (error.message?.includes("429") && retryCount < 2) {
+      console.log(`Rate limit hit, retrying in ${5 * (retryCount + 1)}s...`);
+      await new Promise(resolve => setTimeout(resolve, 5000 * (retryCount + 1)));
+      return callGemini(prompt, useSearch, retryCount + 1);
+    }
     if (error.message?.includes("429")) {
-      throw new Error("Limite de requêtes atteinte (429). Veuillez patienter une minute.");
+      throw new Error("Limite de requêtes atteinte (429). Veuillez patienter une minute avant de réessayer.");
     }
     throw error;
   }
@@ -47,7 +52,7 @@ export async function callGemini(prompt: string, useSearch = false) {
 export async function generateApplicationEmail(jobTitle: string, company: string, description: string, recruiterName?: string) {
   const ai = getAi();
   const prompt = `Tu es Charid Youssef, étudiant en Master à l'INSEEC Lyon, spécialisé en Digital Marketing, E-commerce et Growth.
-Écris un email de candidature court, percutant et personnalisé pour le poste de "${jobTitle}" chez "${company}".
+Écris un email de candidature court, direct et professionnel pour le poste de "${jobTitle}" chez "${company}".
 
 ${recruiterName ? `Le destinataire est : ${recruiterName}.` : "Le destinataire est le Responsable du Recrutement."}
 
@@ -56,20 +61,20 @@ ${description}
 
 CONTRAT : Alternance (Octobre 2026).
 
-TES POINTS FORTS & AVANT-GARDE IA (Autodidacte) :
-- Débutant motivé en Ads (Meta/Google) et SEO, avec une grande envie d'apprendre et de progresser.
-- Maîtrise d'outils IA de pointe (appris en autodidacte) : Vibecoding, Claude Code, Agents IA via OpenClaw.
-- Automatisation via n8n.
-- Profil hybride Business Dev & Growth Strategy (INSEEC Lyon).
+TES POINTS FORTS :
+- Étudiant en Master (INSEEC Lyon) spécialisé en Digital Marketing & Growth.
+- Passionné par l'IA appliquée au marketing (automatisation n8n, agents IA).
+- Profil hybride entre Business Development et Stratégie Growth.
+- Très motivé pour apprendre et monter en compétences sur les outils Ads (Meta/Google) et SEO.
 
-DIRECTIVES CRUCIALES :
-1. NE METS AUCUN ESPACE VIDE À COMPLÉTER (pas de [Nom], pas de [Date], pas de [Entreprise]).
-2. L'email doit être prêt à l'envoi tel quel.
-3. Si le nom du recruteur est connu (${recruiterName || "non connu"}), utilise-le poliment. Sinon, utilise une formule professionnelle comme "Bonjour," ou "Madame, Monsieur,".
-4. Le ton doit être professionnel, humble mais déterminé. Souligne que tu es en phase d'apprentissage sur les Ads/SEO mais que tu maîtrises déjà des outils IA très avancés.
-5. Évite absolument les familiarités comme "prendre un café". Propose plutôt un "entretien" ou un "échange professionnel".
+DIRECTIVES :
+1. RESTE SIMPLE ET SOBRE. Pas de mention de "levée de fonds", "licorne" ou de flatterie excessive.
+2. NE METS AUCUN ESPACE VIDE À COMPLÉTER (pas de [Nom], pas de [Date], pas de [Entreprise]).
+3. L'email doit être prêt à l'envoi tel quel.
+4. Utilise une formule de politesse adaptée au nom du recruteur (${recruiterName || "non connu"}).
+5. Le ton doit être professionnel et déterminé.
 6. Termine par "Cordialement, Charid Youssef".
-6. Ne mets pas d'objet (je le générerai séparément).
+7. Ne mets pas d'objet.
 
 Retourne UNIQUEMENT le corps de l'email.`;
 

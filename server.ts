@@ -59,10 +59,11 @@ const getOAuth2Client = (redirectUri: string) => {
 };
 
 const getRedirectUri = (req: Request) => {
-  // On Cloud Run, x-forwarded-host is the external domain
+  // On Render, we want to use the public domain
   const host = req.get('x-forwarded-host') || req.get('host') || '';
-  const hostname = host.split(':')[0]; // Remove port
-  return `https://${hostname}/auth/callback`;
+  // If we are on localhost, use http, otherwise https
+  const protocol = host.includes('localhost') ? 'http' : 'https';
+  return `${protocol}://${host}/auth/callback`;
 };
 
 // ── AUTH ROUTES ──────────────────────────────────────────────────────────────
@@ -186,9 +187,8 @@ app.post('/api/send-application', async (req, res) => {
     const gmail = google.gmail({ version: 'v1', auth: client });
 
     const boundary = 'foo_bar_baz';
-    const nl = '\r\n'; // RFC 2822 uses CRLF
+    const nl = '\r\n';
     
-    // Helper to encode subject for non-ASCII characters
     const encodedSubject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
 
     let emailParts = [
@@ -199,19 +199,20 @@ app.post('/api/send-application', async (req, res) => {
       '',
       '--' + boundary,
       'Content-Type: text/plain; charset="UTF-8"',
-      'Content-Transfer-Encoding: 7bit',
+      'Content-Transfer-Encoding: base64',
       '',
-      body,
+      Buffer.from(body).toString('base64'),
       ''
     ];
 
-    if (cv) {
+    if (cv && cv.buffer) {
+      const cvBuffer = Buffer.isBuffer(cv.buffer) ? cv.buffer : Buffer.from(cv.buffer);
       emailParts.push('--' + boundary);
-      emailParts.push(`Content-Type: ${cv.mimetype}; name="${cv.originalname}"`);
-      emailParts.push(`Content-Disposition: attachment; filename="${cv.originalname}"`);
+      emailParts.push(`Content-Type: ${cv.mimetype || 'application/pdf'}; name="${cv.originalname || 'CV.pdf'}"`);
+      emailParts.push(`Content-Disposition: attachment; filename="${cv.originalname || 'CV.pdf'}"`);
       emailParts.push('Content-Transfer-Encoding: base64');
       emailParts.push('');
-      emailParts.push(cv.buffer.toString('base64'));
+      emailParts.push(cvBuffer.toString('base64'));
       emailParts.push('');
     }
 
