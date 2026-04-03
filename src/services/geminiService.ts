@@ -14,6 +14,10 @@ function getAi() {
 }
 
 export async function callGemini(prompt: string, useSearch = false, retryCount = 0, model = "gemini-3-flash-preview") {
+  const timeoutPromise = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error("Timeout: L'API Gemini a mis trop de temps à répondre.")), 60000)
+  );
+
   try {
     const ai = getAi();
     const config: any = {};
@@ -24,11 +28,13 @@ export async function callGemini(prompt: string, useSearch = false, retryCount =
       config.responseMimeType = "application/json";
     }
 
-    const response = await ai.models.generateContent({
+    const generatePromise = ai.models.generateContent({
       model: model,
       contents: prompt,
       config,
     });
+
+    const response: any = await Promise.race([generatePromise, timeoutPromise]);
     
     if (!response.text) {
       throw new Error("Réponse vide de l'API Gemini");
@@ -40,6 +46,11 @@ export async function callGemini(prompt: string, useSearch = false, retryCount =
     
     const errStr = String(error).toLowerCase();
     const isRateLimit = errStr.includes("429") || errStr.includes("quota") || errStr.includes("rate limit") || error.status === 429;
+    const isTimeout = errStr.includes("timeout");
+
+    if (isTimeout) {
+      throw error; // Don't retry on timeout
+    }
     
     // If rate limit hit on gemini-3, try falling back to gemini-flash-latest which often has higher quotas
     if (isRateLimit && model === "gemini-3-flash-preview") {
@@ -47,9 +58,9 @@ export async function callGemini(prompt: string, useSearch = false, retryCount =
       return callGemini(prompt, useSearch, retryCount, "gemini-flash-latest");
     }
 
-    if (isRateLimit && retryCount < 7) {
-      const delay = Math.pow(2, retryCount) * 4000 + Math.random() * 2000;
-      console.log(`Rate limit hit (429), retrying in ${Math.round(delay/1000)}s... (Attempt ${retryCount + 1}/7)`);
+    if (isRateLimit && retryCount < 3) {
+      const delay = Math.pow(2, retryCount) * 2000 + Math.random() * 1000;
+      console.log(`Rate limit hit (429), retrying in ${Math.round(delay/1000)}s... (Attempt ${retryCount + 1}/3)`);
       await new Promise(resolve => setTimeout(resolve, delay));
       return callGemini(prompt, useSearch, retryCount + 1, model);
     }

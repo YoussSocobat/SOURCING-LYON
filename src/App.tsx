@@ -152,25 +152,19 @@ export default function App() {
   };
 
   const clearAllDynamicTargets = () => {
-    if (window.confirm("Voulez-vous vraiment effacer TOUS les nouveaux emails scrapés ?")) {
-      setDynamicTargets([]);
-      setBatchSelection(new Set());
-    }
+    setDynamicTargets([]);
+    setBatchSelection(new Set());
   };
 
   const handleBatchSend = async () => {
     if (batchSelection.size === 0) return;
     if (!gmailConnected || !cvFile) {
-      alert("Veuillez connecter Gmail et charger un CV avant d'envoyer.");
+      setAppStatus("⚠️ Erreur : Connectez Gmail et chargez un CV.");
       return;
     }
 
     const targetsToSend = [...dynamicTargets, ...TARGETS].filter(t => batchSelection.has(t.id));
     
-    if (!window.confirm(`Voulez-vous vraiment envoyer ${targetsToSend.length} candidatures personnalisées d'un coup ?`)) {
-      return;
-    }
-
     setIsBatchSending(true);
     setBatchProgress({ current: 0, total: targetsToSend.length });
     setAppStatus(`Envoi groupé en cours : 0/${targetsToSend.length}...`);
@@ -753,6 +747,12 @@ Retourne UNIQUEMENT ce JSON :
             <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:10 }}>
               <div style={{ fontSize:38, animation:"spin 1s linear infinite", display:"inline-block" }}>⟳</div>
               <div style={{ fontSize:14, color:"#71717a" }}>Recherche des offres autour de Lyon…</div>
+              <button 
+                onClick={() => setLoadingOffers(false)}
+                style={{ marginTop: 10, padding: "6px 12px", borderRadius: 8, background: "rgba(255,255,255,0.1)", color: "#a1a1aa", border: "1px solid rgba(255,255,255,0.1)", fontSize: 12, cursor: "pointer" }}
+              >
+                Annuler le chargement
+              </button>
             </div>
           )}
 
@@ -907,7 +907,7 @@ Retourne UNIQUEMENT ce JSON :
               </h2>
               {appliedOffers.length > 0 && (
                 <button 
-                  onClick={() => { if(window.confirm("Vider toute la liste ?")) setApplied({}); }}
+                  onClick={() => { setApplied({}); }}
                   style={{ padding:"6px 12px", borderRadius:8, fontSize:12, cursor:"pointer", border:"1px solid #3f3f46", background:"transparent", color:"#71717a" }}
                 >
                   Vider la liste
@@ -1076,8 +1076,18 @@ Retourne UNIQUEMENT ce JSON :
             <div style={{ padding:"12px 12px", borderBottom:"1px solid #27272a", display:"flex", flexDirection:"column", gap:8 }}>
               <button onClick={scrapeEmails} disabled={loadingScrape || cooldown > 0}
                 style={{ width:"100%", padding:"10px 14px", borderRadius:10, fontWeight:700, fontSize:12, cursor:(loadingScrape || cooldown > 0)?"not-allowed":"pointer", border:"none", background:(loadingScrape || cooldown > 0)?"#27272a":"linear-gradient(135deg,#7c3aed,#4f46e5)", color:(loadingScrape || cooldown > 0)?"#71717a":"#fff", display:"flex", alignItems:"center", justifyContent:"center", gap:8, boxShadow:(loadingScrape || cooldown > 0)?"none":"0 0 18px rgba(124,58,237,0.4)" }}>
-                <span style={{ display:"inline-block", animation:loadingScrape?"spin 0.8s linear infinite":"none", fontSize:15 }}>🔍</span>
-                {loadingScrape ? "Scraping Maps…" : cooldown > 0 ? `Attendre ${cooldown}s` : "Scraper 15 nouveaux emails"}
+                {loadingScrape ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ animation: "spin 0.8s linear infinite" }}>⟳</span>
+                    <span>Scraping...</span>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); setLoadingScrape(false); }}
+                      style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", padding: "2px 6px", borderRadius: 4, fontSize: 9, cursor: "pointer" }}
+                    >
+                      X
+                    </button>
+                  </div>
+                ) : cooldown > 0 ? `Attendre ${cooldown}s` : "Scraper 15 nouveaux emails"}
               </button>
               
               <div style={{ display:"flex", gap:6 }}>
