@@ -41,10 +41,10 @@ export async function callGemini(prompt: string, useSearch = false, retryCount =
     const errStr = String(error).toLowerCase();
     const isRateLimit = errStr.includes("429") || errStr.includes("quota") || errStr.includes("rate limit") || error.status === 429;
     
-    // If rate limit hit on gemini-3, try falling back to gemini-1.5-flash which often has higher quotas
+    // If rate limit hit on gemini-3, try falling back to gemini-flash-latest which often has higher quotas
     if (isRateLimit && model === "gemini-3-flash-preview") {
-      console.log("Switching to fallback model gemini-1.5-flash due to rate limit...");
-      return callGemini(prompt, useSearch, retryCount, "gemini-1.5-flash");
+      console.log("Switching to fallback model gemini-flash-latest due to rate limit...");
+      return callGemini(prompt, useSearch, retryCount, "gemini-flash-latest");
     }
 
     if (isRateLimit && retryCount < 7) {
