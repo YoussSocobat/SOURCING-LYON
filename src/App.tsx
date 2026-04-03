@@ -137,8 +137,22 @@ export default function App() {
     });
   };
 
+  const deleteOffer = (id: string | number) => {
+    setOffers(prev => prev.filter(o => o.id !== id));
+    setBatchSelection(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
   const clearAllDynamicTargets = () => {
     setDynamicTargets([]);
+    setBatchSelection(new Set());
+  };
+
+  const clearAllOffers = () => {
+    setOffers([]);
     setBatchSelection(new Set());
   };
 
@@ -146,6 +160,44 @@ export default function App() {
     const data = JSON.stringify(dynamicTargets, null, 2);
     navigator.clipboard.writeText(data);
     setAppStatus("✅ JSON copié dans le presse-papier !");
+    setTimeout(() => setAppStatus(null), 3000);
+  };
+
+  const copyAllEmailsList = () => {
+    const allEmails = [...dynamicTargets, ...TARGETS].flatMap(t => 
+      t.contacts?.flatMap((c: any) => c.emails?.map((e: any) => e.addr)) || []
+    ).filter(Boolean);
+    const uniqueEmails = Array.from(new Set(allEmails));
+    navigator.clipboard.writeText(uniqueEmails.join("\n"));
+    setAppStatus("✅ Liste d'emails copiée !");
+    setTimeout(() => setAppStatus(null), 3000);
+  };
+
+  const handleImportEmailsList = (text: string) => {
+    const lines = text.split(/[\n,;]/).map(s => s.trim()).filter(s => s.includes("@"));
+    if (lines.length === 0) {
+      setAppStatus("❌ Aucun email valide trouvé dans le texte.");
+      return;
+    }
+    const newTargets = lines.map((email, i) => ({
+      id: `import-${Date.now()}-${i}`,
+      name: email.split("@")[0],
+      entreprise: "Importé",
+      secteur: "Inconnu",
+      ville: "Lyon",
+      taille: "Inconnue",
+      site: "",
+      tag: "⚡ À explorer",
+      contacts: [{
+        nom: "Responsable",
+        poste: "Recrutement",
+        emails: [{ addr: email, score: "🟡", note: "Importé manuellement" }]
+      }]
+    }));
+    setDynamicTargets(prev => [...newTargets, ...prev]);
+    setAppStatus(`✅ ${newTargets.length} emails importés !`);
+    setShowImportArea(false);
+    setImportText("");
     setTimeout(() => setAppStatus(null), 3000);
   };
 
@@ -204,7 +256,7 @@ export default function App() {
 
         // 1. Generate
         const body = await generateApplicationEmail(jobTitle, company, description, recruiterName);
-        const subject = `Candidature Alternance - ${jobTitle} - Charid Youssef`;
+        const subject = `Candidature Alternance Charid Youssef`;
 
         setAppStatus(`[${i + 1}/${targetsToSend.length}] Envoi à ${target.name}...`);
 
@@ -258,6 +310,16 @@ export default function App() {
       .then(res => res.json())
       .then(data => setCvFile(data.filename || "CV_Charid_Youssef.pdf"))
       .catch(() => setCvFile("CV_Charid_Youssef.pdf"));
+
+    // Cleanup blacklist (Tenacy, Volago)
+    const blacklist = ["tenacy", "volago"];
+    const filterBlacklist = (list: any[]) => list.filter(item => {
+      const name = (item.name || item.entreprise || "").toLowerCase();
+      return !blacklist.some(b => name.includes(b));
+    });
+
+    setOffers(prev => filterBlacklist(prev));
+    setDynamicTargets(prev => filterBlacklist(prev));
   }, []);
 
   // Cooldown countdown
@@ -344,7 +406,7 @@ export default function App() {
       const recruiterName = target.contacts?.[0]?.nom;
       
       const body = await generateApplicationEmail(jobTitle, company, description, recruiterName);
-      const subject = `Candidature Alternance - ${jobTitle} - Charid Youssef`;
+      const subject = `Candidature Alternance Charid Youssef`;
       
       // Instead of sending immediately, show preview
       setPreviewEmail({ target, emailAddr, subject, body });
@@ -471,7 +533,7 @@ Retourne UNIQUEMENT ce JSON :
       }
 
       setOffers(prev => {
-        const combined = [...newOffres, ...prev];
+        const combined = [...newOffres.map((o: any, i: number) => ({ ...o, id: o.id || `off-${Date.now()}-${i}` })), ...prev];
         // Deduplicate by URL
         const seen = new Set();
         return combined.filter(o => {
@@ -593,7 +655,7 @@ DIRECTIVES CRUCIALES :
 8. Termine par "Cordialement, Charid Youssef".
 
 Retourne UNIQUEMENT ce JSON :
-{"objet": "Sujet simple et accrocheur", "corps": "Contenu de l'email \\n"}`;
+{"objet": "Candidature Alternance Charid Youssef", "corps": "Contenu de l'email \\n"}`;
 
       const text = await callGemini(prompt, false); // No search needed for simple draft
       const parsed = parseJSON(text);
@@ -699,6 +761,12 @@ Retourne UNIQUEMENT ce JSON :
             ))}
             
             <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+              {filteredOffers.length > 0 && (
+                <button onClick={clearAllOffers}
+                  style={{ padding:"7px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", border:"1px solid #450a0a", background:"transparent", color:"#f87171" }}>
+                  🗑️ Tout effacer
+                </button>
+              )}
               {filteredOffers.some(o => o.email) && (
                 <button onClick={selectAllOffers}
                   style={{ padding:"7px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", border:"1px solid #3f3f46", background:"transparent", color:"#a1a1aa" }}>
@@ -833,6 +901,10 @@ Retourne UNIQUEMENT ce JSON :
                               <button onClick={()=>setApplied(p=>({...p,[o.id]:!p[o.id]}))}
                                 style={{ padding:"5px 11px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", border:"1px solid "+(applied[o.id]?"#16a34a":"#3f3f46"), background:applied[o.id]?"#052e16":"transparent", color:applied[o.id]?"#4ade80":"#a1a1aa" }}>
                                 {applied[o.id]?"✓ Postulé":"Cocher"}
+                              </button>
+                              <button onClick={(e)=>{ e.stopPropagation(); deleteOffer(o.id); }}
+                                style={{ padding:"5px 9px", borderRadius:7, fontSize:12, cursor:"pointer", border:"1px solid #450a0a", background:"transparent", color:"#f87171" }}>
+                                🗑️
                               </button>
                               {o.url&&<a href={o.url} target="_blank" rel="noreferrer" style={{ padding:"5px 11px", borderRadius:7, fontSize:11, fontWeight:600, textDecoration:"none", border:"1px solid #1e40af", background:"#1e3a8a", color:"#93c5fd" }}>Voir →</a>}
                             </div>
@@ -1373,13 +1445,17 @@ Retourne UNIQUEMENT ce JSON :
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
             <h2 style={{ fontSize:18, fontWeight:700, color:"#fff", margin:0 }}>📧 Répertoire des emails collectés</h2>
             <div style={{ display:"flex", gap:8 }}>
+              <button onClick={copyAllEmailsList}
+                style={{ fontSize:12, padding:"6px 12px", borderRadius:8, cursor:"pointer", border:"1px solid #3f3f46", background:"#18181b", color:"#fff" }}>
+                📋 Copier Liste Emails
+              </button>
               <button onClick={copyAllTargetsJSON}
                 style={{ fontSize:12, padding:"6px 12px", borderRadius:8, cursor:"pointer", border:"1px solid #3f3f46", background:"#18181b", color:"#fff" }}>
                 📋 Copier JSON
               </button>
               <button onClick={() => setShowImportArea(!showImportArea)}
                 style={{ fontSize:12, padding:"6px 12px", borderRadius:8, cursor:"pointer", border:"1px solid #3f3f46", background:"#18181b", color:"#fff" }}>
-                📥 Importer JSON
+                📥 Importer
               </button>
               <button onClick={()=>{ 
                 const allEmails = [...dynamicTargets, ...TARGETS].flatMap(t => t.contacts.flatMap(c => c.emails.map(e => ({ ...e, entreprise: t.name, nom: c.nom }))));
@@ -1390,21 +1466,27 @@ Retourne UNIQUEMENT ce JSON :
           </div>
 
           {showImportArea && (
-            <div style={{ marginBottom: 20, background: "#18181b", border: "1px solid #27272a", borderRadius: 10, padding: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", marginBottom: 8 }}>Importer des cibles (Format JSON)</div>
+            <div style={{ marginBottom: 20, background: "#18181b", border: "1px solid #27272a", borderRadius: 12, padding: 20, boxShadow: "0 20px 25px -5px rgba(0,0,0,0.3)" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                <Mail size={16} /> Importer des cibles
+              </div>
               <textarea 
                 value={importText}
                 onChange={(e) => setImportText(e.target.value)}
-                placeholder="Collez ici le JSON copié depuis l'autre instance..."
-                style={{ width: "100%", height: 120, background: "#09090b", border: "1px solid #27272a", borderRadius: 8, color: "#fff", fontSize: 12, padding: 10, outline: "none", marginBottom: 10 }}
+                placeholder="Collez ici soit un JSON, soit une liste d'emails séparés par des virgules ou retours à la ligne..."
+                style={{ width: "100%", height: 140, background: "#09090b", border: "1px solid #27272a", borderRadius: 8, color: "#fff", fontSize: 12, padding: 12, outline: "none", marginBottom: 14, lineHeight: 1.5 }}
               />
               <div style={{ display: "flex", gap: 10 }}>
                 <button onClick={handleImportJSON}
-                  style={{ flex: 1, padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: "#2563eb", color: "#fff", border: "none", cursor: "pointer" }}>
-                  Confirmer l'importation
+                  style={{ flex: 1, padding: "12px", borderRadius: 10, fontSize: 13, fontWeight: 700, background: "#27272a", color: "#fff", border: "1px solid #3f3f46", cursor: "pointer" }}>
+                  Importer JSON
+                </button>
+                <button onClick={() => handleImportEmailsList(importText)}
+                  style={{ flex: 1, padding: "12px", borderRadius: 10, fontSize: 13, fontWeight: 700, background: "#2563eb", color: "#fff", border: "none", cursor: "pointer" }}>
+                  Importer Liste Emails
                 </button>
                 <button onClick={() => setShowImportArea(false)}
-                  style={{ flex: 1, padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: "transparent", color: "#71717a", border: "1px solid #3f3f46", cursor: "pointer" }}>
+                  style={{ flex: 1, padding: "12px", borderRadius: 10, fontSize: 13, fontWeight: 700, background: "transparent", color: "#71717a", border: "1px solid #3f3f46", cursor: "pointer" }}>
                   Annuler
                 </button>
               </div>

@@ -79,14 +79,17 @@ export async function callGemini(prompt: string, useSearch = false, retryCount =
 
 export async function generateApplicationEmail(jobTitle: string, company: string, description: string, recruiterName?: string) {
   const prompt = `Tu es Charid Youssef, étudiant en Master à l'INSEEC Lyon, spécialisé en Digital Marketing, E-commerce et Growth.
-Écris un email de candidature court, direct et professionnel pour le poste de "${jobTitle}" chez "${company}".
+Écris un email de candidature court, direct et professionnel pour une alternance chez "${company}".
 
 ${recruiterName ? `Le destinataire est : ${recruiterName}.` : "Le destinataire est le Responsable du Recrutement."}
 
-CONTEXTE DE L'OFFRE :
-${description}
+IMPORTANT : 
+- Tu postules pour une ALTERNANCE (Octobre 2026) en Marketing Digital, Growth ou Business Development.
+- NE POSTULE PAS pour le poste de "${jobTitle}" si c'est un poste de direction (ex: CEO, Fondateur, Head of...). Dans ce cas, dis simplement que tu postules pour rejoindre l'équipe en alternance.
+- Si "${jobTitle}" semble être une offre d'alternance précise, mentionne-la.
 
-CONTRAT : Alternance (Octobre 2026).
+CONTEXTE DE L'OFFRE / ENTREPRISE :
+${description}
 
 TES POINTS FORTS :
 - Étudiant en Master (INSEEC Lyon) spécialisé en Digital Marketing & Growth.
@@ -96,7 +99,7 @@ TES POINTS FORTS :
 
 DIRECTIVES :
 1. RESTE SIMPLE ET SOBRE. Pas de mention de "levée de fonds", "licorne" ou de flatterie excessive.
-2. NE METS AUCUN ESPACE VIDE À COMPLÉTER (pas de [Nom], pas de [Date], pas de [Entreprise]).
+2. NE METS AUCUN ESPACE VIDE À COMPLÉTER.
 3. L'email doit être prêt à l'envoi tel quel.
 4. Utilise une formule de politesse adaptée au nom du recruteur (${recruiterName || "non connu"}).
 5. Le ton doit être professionnel et déterminé.
