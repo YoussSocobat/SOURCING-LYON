@@ -73,6 +73,7 @@ export default function App() {
 
   // Gmail & CV Management
   const [gmailConnected, setGmailConnected] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(false);
   const [cvFile, setCvFile] = useState<string | null>("CV_Charid_Youssef.pdf");
   const [sendingAppId, setSendingAppId] = useState<string | number | null>(null);
   const [appStatus, setAppStatus] = useState<string | null>(null);
@@ -80,19 +81,40 @@ export default function App() {
 
   // Preview Modal
   const [previewEmail, setPreviewEmail] = useState<{ target: any, emailAddr: string, subject: string, body: string } | null>(null);
+  
+  const checkAuthStatus = async () => {
+    setCheckingAuth(true);
+    try {
+      const res = await fetch('/api/auth/status', { credentials: 'include' });
+      const data = await res.json();
+      setGmailConnected(data.connected);
+    } catch (e) {
+      console.error("Error checking auth:", e);
+      setGmailConnected(false);
+    } finally {
+      setCheckingAuth(false);
+    }
+  };
 
   // Check Gmail & CV status on load
   useEffect(() => {
-    fetch('/api/auth/status', { credentials: 'include' })
-      .then(res => res.json())
-      .then(data => setGmailConnected(data.connected))
-      .catch(() => setGmailConnected(false));
+    checkAuthStatus();
       
     fetch('/api/cv-status', { credentials: 'include' })
       .then(res => res.json())
       .then(data => setCvFile(data.filename || "CV_Charid_Youssef.pdf"))
       .catch(() => setCvFile("CV_Charid_Youssef.pdf"));
   }, []);
+
+  // Cooldown countdown
+  useEffect(() => {
+    if (cooldown > 0) {
+      const timer = setInterval(() => {
+        setCooldown(prev => Math.max(0, prev - 1));
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [cooldown]);
 
   // Listen for OAuth success
   useEffect(() => {
@@ -681,7 +703,16 @@ Retourne UNIQUEMENT ce JSON :
                         <div style={{ width:8, height:8, borderRadius:"50%", background:"#4ade80", animation:"pulse 2s infinite" }} />
                         Gmail Connecté
                       </div>
-                      <button onClick={handleLogoutGmail} style={{ fontSize:11, color:"#71717a", background:"none", border:"none", cursor:"pointer", textDecoration:"underline" }}>Déconnecter</button>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <button 
+                          onClick={checkAuthStatus} 
+                          disabled={checkingAuth}
+                          style={{ fontSize:11, color:"#71717a", background:"none", border:"none", cursor:"pointer", textDecoration:"underline", opacity: checkingAuth ? 0.5 : 1 }}
+                        >
+                          {checkingAuth ? "Vérification..." : "Rafraîchir"}
+                        </button>
+                        <button onClick={handleLogoutGmail} style={{ fontSize:11, color:"#71717a", background:"none", border:"none", cursor:"pointer", textDecoration:"underline" }}>Déconnecter</button>
+                      </div>
                     </div>
                   ) : (
                     <>

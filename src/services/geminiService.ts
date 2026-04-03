@@ -1,9 +1,21 @@
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+let aiInstance: GoogleGenAI | null = null;
+
+function getAi() {
+  if (!aiInstance) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("La clé API Gemini est manquante. Veuillez la configurer dans les variables d'environnement.");
+    }
+    aiInstance = new GoogleGenAI({ apiKey });
+  }
+  return aiInstance;
+}
 
 export async function callGemini(prompt: string, useSearch = false) {
   try {
+    const ai = getAi();
     const config: any = {};
 
     if (useSearch) {
@@ -33,6 +45,7 @@ export async function callGemini(prompt: string, useSearch = false) {
 }
 
 export async function generateApplicationEmail(jobTitle: string, company: string, description: string, recruiterName?: string) {
+  const ai = getAi();
   const prompt = `Tu es Charid Youssef, étudiant en Master à l'INSEEC Lyon, spécialisé en Digital Marketing, E-commerce et Growth.
 Écris un email de candidature court, percutant et personnalisé pour le poste de "${jobTitle}" chez "${company}".
 

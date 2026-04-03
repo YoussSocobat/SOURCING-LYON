@@ -3,7 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import { google } from "googleapis";
-import cookieSession from "cookie-session";
+import session from "express-session";
 import multer from "multer";
 import dotenv from "dotenv";
 
@@ -32,14 +32,20 @@ app.set('trust proxy', 1);
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-// Session management (Using cookie-session for persistence across Cloud Run restarts)
-app.use(cookieSession({
+// Session management (Using express-session with Partitioned support for iframes)
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'cv-generator-secret-key',
+  resave: false,
+  saveUninitialized: false,
   name: 'cv_gen_session',
-  keys: [process.env.SESSION_SECRET || 'cv-generator-secret-key'],
-  maxAge: 24 * 60 * 60 * 1000, // 24 hours
-  secure: true,
-  sameSite: 'none',
-  httpOnly: true
+  proxy: true,
+  cookie: { 
+    secure: true, 
+    sameSite: 'none',
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    // @ts-ignore - Partitioned is a new attribute for Chrome CHIPS
+    partitioned: true 
+  }
 }));
 
 app.use(express.json());
@@ -99,21 +105,28 @@ app.get('/auth/callback', async (req, res) => {
     // Also store a flag to help debugging
     req.session.isAuth = true;
     
-    res.send(`
-      <html>
-        <body>
-          <script>
-            if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
-              window.close();
-            } else {
-              window.location.href = '/';
-            }
-          </script>
-          <p>Authentification réussie ! Redirection en cours...</p>
-        </body>
-      </html>
-    `);
+    req.session.save((err: any) => {
+      if (err) {
+        console.error('[OAuth] Session save error:', err);
+        return res.status(500).send("Erreur lors de la sauvegarde de la session");
+      }
+      
+      res.send(`
+        <html>
+          <body>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
+                window.close();
+              } else {
+                window.location.href = '/';
+              }
+            </script>
+            <p>Authentification réussie ! Redirection en cours...</p>
+          </body>
+        </html>
+      `);
+    });
   } catch (error: any) {
     const errorData = error.response?.data || error.message;
     console.error('[OAuth] Error during token exchange:', errorData);
@@ -158,8 +171,8 @@ app.get('/api/cv-status', (req, res) => {
 
 app.post('/api/send-application', async (req, res) => {
   if (!req.session?.tokens) {
-    console.error('Session tokens missing for send-application. Session ID:', req.session?.id);
-    return res.status(401).json({ error: 'Not connected to Gmail' });
+    console.error('[Gmail] Session tokens missing for send-application. Session:', req.session);
+    return res.status(401).json({ error: 'Not connected to Gmail (session lost)' });
   }
   
   const { to, subject, body } = req.body;
