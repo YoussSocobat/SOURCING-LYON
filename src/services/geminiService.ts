@@ -13,7 +13,7 @@ function getAi() {
   return aiInstance;
 }
 
-export async function callGemini(prompt: string, useSearch = false, retryCount = 0) {
+export async function callGemini(prompt: string, useSearch = false, retryCount = 0, model = "gemini-3-flash-preview") {
   try {
     const ai = getAi();
     const config: any = {};
@@ -25,7 +25,7 @@ export async function callGemini(prompt: string, useSearch = false, retryCount =
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: model,
       contents: prompt,
       config,
     });
@@ -36,21 +36,28 @@ export async function callGemini(prompt: string, useSearch = false, retryCount =
     
     return response.text;
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
+    console.error(`Gemini API Error (${model}):`, error);
     
-    // Handle 429 with exponential backoff
     const errStr = String(error).toLowerCase();
     const isRateLimit = errStr.includes("429") || errStr.includes("quota") || errStr.includes("rate limit") || error.status === 429;
     
+    // If rate limit hit on gemini-3, try falling back to gemini-1.5-flash which often has higher quotas
+    if (isRateLimit && model === "gemini-3-flash-preview") {
+      console.log("Switching to fallback model gemini-1.5-flash due to rate limit...");
+      return callGemini(prompt, useSearch, retryCount, "gemini-1.5-flash");
+    }
+
     if (isRateLimit && retryCount < 7) {
       const delay = Math.pow(2, retryCount) * 4000 + Math.random() * 2000;
       console.log(`Rate limit hit (429), retrying in ${Math.round(delay/1000)}s... (Attempt ${retryCount + 1}/7)`);
       await new Promise(resolve => setTimeout(resolve, delay));
-      return callGemini(prompt, useSearch, retryCount + 1);
+      return callGemini(prompt, useSearch, retryCount + 1, model);
     }
     
     if (isRateLimit) {
-      throw new Error("⚠️ Limite de requêtes atteinte (429). Veuillez patienter une minute avant de réessayer.");
+      const isRender = typeof window !== 'undefined' && window.location.hostname.includes('render');
+      const extraMsg = isRender ? "\n\nNote: Sur Render, les limites sont plus strictes. Vérifiez que votre clé API est bien configurée dans le dashboard Render." : "";
+      throw new Error("⚠️ Limite de requêtes atteinte (429). Veuillez patienter une minute avant de réessayer." + extraMsg);
     }
     throw error;
   }

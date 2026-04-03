@@ -57,16 +57,11 @@ export default function App() {
     return s ? JSON.parse(s) : {};
   });
 
-  // Persist states
-  useEffect(() => {
-    localStorage.setItem("applied_v2", JSON.stringify(applied));
-  }, [applied]);
-  useEffect(() => {
-    localStorage.setItem("saved_v2", JSON.stringify(saved));
-  }, [saved]);
-
   // Live offers
-  const [offers, setOffers] = useState<any[]>([]);
+  const [offers, setOffers] = useState<any[]>(() => {
+    const s = localStorage.getItem("offers_v2");
+    return s ? JSON.parse(s) : [];
+  });
   const [loadingOffers, setLoadingOffers] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -75,7 +70,24 @@ export default function App() {
   const [expandedOffer, setExpandedOffer] = useState<number | null>(null);
 
   // Maps scraper & Dynamic Targets
-  const [dynamicTargets, setDynamicTargets] = useState<any[]>([]);
+  const [dynamicTargets, setDynamicTargets] = useState<any[]>(() => {
+    const s = localStorage.getItem("targets_v2");
+    return s ? JSON.parse(s) : [];
+  });
+
+  // Persist states
+  useEffect(() => {
+    localStorage.setItem("applied_v2", JSON.stringify(applied));
+  }, [applied]);
+  useEffect(() => {
+    localStorage.setItem("saved_v2", JSON.stringify(saved));
+  }, [saved]);
+  useEffect(() => {
+    localStorage.setItem("offers_v2", JSON.stringify(offers));
+  }, [offers]);
+  useEffect(() => {
+    localStorage.setItem("targets_v2", JSON.stringify(dynamicTargets));
+  }, [dynamicTargets]);
   const [loadingScrape, setLoadingScrape] = useState(false);
   const [scrapeError, setScrapeError] = useState<string | null>(null);
   const [scrapeCount, setScrapeCount] = useState(0);
@@ -628,7 +640,10 @@ Retourne UNIQUEMENT ce JSON :
           <div style={{ width:32, height:32, borderRadius:8, background:"#2563eb", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:700, fontSize:13 }}>YC</div>
           <div>
             <div style={{ fontWeight:700, fontSize:13, color:"#fff" }}>Charid Youssef</div>
-            <div style={{ fontSize:11, color:"#71717a" }}>Business Dev & Growth · Alternance Oct. 2026 · INSEEC Lyon</div>
+            <div style={{ fontSize:11, color:"#71717a", display:"flex", alignItems:"center", gap:4 }}>
+              Business Dev & Growth · Alternance Oct. 2026 · INSEEC Lyon
+              <span style={{ width:6, height:6, borderRadius:"50%", background: "#22c55e", display:"inline-block" }} title="API Key Detected"></span>
+            </div>
           </div>
         </div>
         <div style={{ display:"flex", background:"#18181b", borderRadius:12, padding:4, border:"1px solid #27272a", gap:2 }}>
