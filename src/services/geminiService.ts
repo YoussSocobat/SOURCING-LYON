@@ -39,10 +39,12 @@ export async function callGemini(prompt: string, useSearch = false, retryCount =
     console.error("Gemini API Error:", error);
     
     // Handle 429 with exponential backoff
-    const isRateLimit = error.message?.includes("429") || error.status === 429;
-    if (isRateLimit && retryCount < 5) {
-      const delay = Math.pow(2, retryCount) * 3000 + Math.random() * 1000;
-      console.log(`Rate limit hit (429), retrying in ${Math.round(delay/1000)}s... (Attempt ${retryCount + 1}/5)`);
+    const errStr = String(error).toLowerCase();
+    const isRateLimit = errStr.includes("429") || errStr.includes("quota") || errStr.includes("rate limit") || error.status === 429;
+    
+    if (isRateLimit && retryCount < 7) {
+      const delay = Math.pow(2, retryCount) * 4000 + Math.random() * 2000;
+      console.log(`Rate limit hit (429), retrying in ${Math.round(delay/1000)}s... (Attempt ${retryCount + 1}/7)`);
       await new Promise(resolve => setTimeout(resolve, delay));
       return callGemini(prompt, useSearch, retryCount + 1);
     }
@@ -55,7 +57,6 @@ export async function callGemini(prompt: string, useSearch = false, retryCount =
 }
 
 export async function generateApplicationEmail(jobTitle: string, company: string, description: string, recruiterName?: string) {
-  const ai = getAi();
   const prompt = `Tu es Charid Youssef, étudiant en Master à l'INSEEC Lyon, spécialisé en Digital Marketing, E-commerce et Growth.
 Écris un email de candidature court, direct et professionnel pour le poste de "${jobTitle}" chez "${company}".
 
@@ -83,11 +84,8 @@ DIRECTIVES :
 
 Retourne UNIQUEMENT le corps de l'email.`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: prompt,
-  });
-  return response.text;
+  // Use callGemini to benefit from retry logic (without search tool)
+  return callGemini(prompt, false);
 }
 
 export function parseJSON(text: string) {

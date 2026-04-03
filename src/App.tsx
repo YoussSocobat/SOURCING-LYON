@@ -458,9 +458,12 @@ Retourne UNIQUEMENT ce JSON :
       });
 
       setLastRefresh(new Date());
-      setCooldown(15);
+      setCooldown(30);
     } catch (e: any) {
       setApiError(e.message);
+      if (e.message?.includes("429")) {
+        setCooldown(60);
+      }
     } finally {
       setLoadingOffers(false);
     }
@@ -529,9 +532,12 @@ Retourne UNIQUEMENT ce JSON :
       }));
 
       setDynamicTargets(prev => [...newTargets, ...prev].slice(0, 50));
-      setCooldown(20);
+      setCooldown(30);
     } catch (e: any) {
       setScrapeError(e.message);
+      if (e.message?.includes("429")) {
+        setCooldown(60);
+      }
     } finally {
       setLoadingScrape(false);
     }
@@ -701,7 +707,22 @@ Retourne UNIQUEMENT ce JSON :
           {apiError && (
             <div style={{ background:"#450a0a", border:"1px solid #991b1b", borderRadius:10, padding:"12px 16px", fontSize:13, color:"#fca5a5", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
               <span>⚠️ {apiError}</span>
-              <button onClick={fetchOffers} style={{ background:"#991b1b", border:"none", color:"#fca5a5", padding:"4px 12px", borderRadius:6, fontSize:11, cursor:"pointer", fontWeight:600 }}>Réessayer</button>
+              <button 
+                onClick={fetchOffers} 
+                disabled={cooldown > 0}
+                style={{ 
+                  background: cooldown > 0 ? "#27272a" : "#991b1b", 
+                  border:"none", 
+                  color: cooldown > 0 ? "#71717a" : "#fca5a5", 
+                  padding:"4px 12px", 
+                  borderRadius:6, 
+                  fontSize:11, 
+                  cursor: cooldown > 0 ? "not-allowed" : "pointer", 
+                  fontWeight:600 
+                }}
+              >
+                {cooldown > 0 ? `Attendre ${cooldown}s` : "Réessayer"}
+              </button>
             </div>
           )}
 
