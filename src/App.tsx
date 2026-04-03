@@ -48,8 +48,22 @@ export default function App() {
   const [view, setView] = useState("offres");
   const [selected, setSelected] = useState<any>(null);
   const [copied, setCopied] = useState<string | null>(null);
-  const [applied, setApplied] = useState<Record<number, boolean>>({});
-  const [saved, setSaved] = useState<Record<number, boolean>>({});
+  const [applied, setApplied] = useState<Record<string | number, boolean>>(() => {
+    const s = localStorage.getItem("applied_v2");
+    return s ? JSON.parse(s) : {};
+  });
+  const [saved, setSaved] = useState<Record<string | number, boolean>>(() => {
+    const s = localStorage.getItem("saved_v2");
+    return s ? JSON.parse(s) : {};
+  });
+
+  // Persist states
+  useEffect(() => {
+    localStorage.setItem("applied_v2", JSON.stringify(applied));
+  }, [applied]);
+  useEffect(() => {
+    localStorage.setItem("saved_v2", JSON.stringify(saved));
+  }, [saved]);
 
   // Live offers
   const [offers, setOffers] = useState<any[]>([]);
@@ -247,17 +261,22 @@ export default function App() {
     setLoadingOffers(true);
     setApiError(null);
     try {
-      const prompt = `Tu es un assistant expert en recrutement et sourcing. UTILISE GOOGLE SEARCH pour trouver des offres d'alternance RÉELLES et ACTUELLES (publiées il y a moins de 15 jours) pour Charid Youssef (étudiant Master INSEEC Lyon).
+      const prompt = `Tu es un assistant expert en recrutement et sourcing. UTILISE GOOGLE SEARCH pour trouver des offres d'alternance RÉELLES, ACTUELLES et VÉRIFIÉES (publiées il y a moins de 15 jours) pour Charid Youssef (étudiant Master INSEEC Lyon).
 
 DOMAINES CIBLÉS : Communication, Marketing Digital, Growth Marketing, E-commerce, Business Developer, IA Automation.
 PROFIL : Débutant motivé cherchant à monter en compétences sur les outils Ads (Meta/Google) et SEO. Passionné par l'IA (automatisation n8n, agents IA).
 LIEU : Lyon et sa région (rayon ${radius}km).
 CIBLE : Entreprises innovantes, startups tech, agences digital/growth, et PME dynamiques.
 
-CRITÈRES EXCLUSIFS (TRÈS IMPORTANT) :
+SOURCES OBLIGATOIRES (VÉRIFIE LES LIENS) :
+1. Indeed, Hellowork, La Bonne Alternance, Meteojob, LinkedIn, Welcome to the Jungle.
+2. SITES CARRIÈRES directs des entreprises lyonnaises (ex: Cegid, GL Events, LDLC, startups de H7, etc.).
+
+CONSIGNES DE QUALITÉ (CRITICAL) :
+- NE DONNE PAS D'OFFRES EXPIRÉES ou de liens morts (404). Vérifie que l'annonce est toujours en ligne.
 - EXCLURE TOUTES LES ÉCOLES et centres de formation.
-- Cherche sur TOUS les sites : Indeed, Hellowork, La Bonne Alternance, LinkedIn, Welcome to the Jungle, et SURTOUT les SITES CARRIÈRES des entreprises lyonnaises.
 - Trouve au moins 15-20 offres distinctes.
+- Priorise les offres publiées DIRECTEMENT sur le site de l'entreprise.
 
 IMPORTANT (EFFORT MAXIMUM REQUIS) : Pour CHAQUE offre, tu DOIS faire un effort particulier pour trouver l'adresse email directe du recruteur ou du responsable. 
 - Cherche sur la page de l'offre, mais aussi sur le site carrière de l'entreprise.
@@ -265,7 +284,7 @@ IMPORTANT (EFFORT MAXIMUM REQUIS) : Pour CHAQUE offre, tu DOIS faire un effort p
 - Indique l'email uniquement si tu as une forte présomption de validité.
 
 Retourne UNIQUEMENT ce JSON (aucun autre texte, aucune explication) :
-{"offres":[{"titre":"","entreprise":"","ville":"","contrat":"Alternance","salaire":"","description":"","date":"YYYY-MM-DD","url":"LIEN_REEL","email":"EMAIL_TROUVE_OU_PROBABLE","source":"NOM_DU_SITE"}]}
+{"offres":[{"titre":"","entreprise":"","ville":"","contrat":"Alternance","salaire":"","description":"","date":"YYYY-MM-DD","url":"LIEN_DIRECT_ET_VALIDE","email":"EMAIL_TROUVE_OU_PROBABLE","source":"NOM_DU_SITE"}]}
 
 Si aucun email n'est trouvé malgré tes recherches, laisse le champ "email" vide.`;
 
@@ -451,10 +470,15 @@ Retourne UNIQUEMENT ce JSON :
   };
 
   const filteredOffers = offers.filter(o => {
+    // Exclude already applied
+    if (applied[o.id]) return false;
+    
     if (offerFilter === "Nouvelles (7j)") return !o.date || (new Date().getTime() - new Date(o.date).getTime()) < 7*86400000;
     if (offerFilter === "Avec email") return !!o.email;
     return true;
   });
+
+  const appliedOffers = offers.filter(o => applied[o.id]);
 
   // ── NAV ───────────────────────────────────────────────────────────────────────
   const NavBtn = ({ k, label, count, countBg }: { k: string, label: string, count?: number | null, countBg?: string }) => (
@@ -481,6 +505,7 @@ Retourne UNIQUEMENT ce JSON :
         </div>
         <div style={{ display:"flex", background:"#18181b", borderRadius:12, padding:4, border:"1px solid #27272a", gap:2 }}>
           <NavBtn k="offres" label="📡 Offres Live" count={filteredOffers.length||null} countBg="#dc2626" />
+          <NavBtn k="applied" label="✅ Mes Candidatures" count={appliedOffers.length||null} countBg="#16a34a" />
           <NavBtn k="sourcing" label="🎯 Sourcing" count={TARGETS.length + dynamicTargets.length} countBg="#374151" />
           <NavBtn k="emails" label="📧 Emails" count={(dynamicTargets.length + TARGETS.reduce((acc, t) => acc + t.contacts.reduce((a, c) => a + c.emails.length, 0), 0)) || null} countBg="#7c3aed" />
           <NavBtn k="candidature" label="💼 Candidature" count={cvFile ? 1 : null} countBg="#2563eb" />
@@ -676,6 +701,59 @@ Retourne UNIQUEMENT ce JSON :
                 Confirmer et envoyer
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MES CANDIDATURES ══ */}
+      {view === "applied" && (
+        <div style={{ flex:1, overflowY:"auto", padding:20, display:"flex", flexDirection:"column", gap:20 }}>
+          <div style={{ maxWidth:1000, margin:"0 auto", width:"100%" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+              <h2 style={{ fontSize:24, fontWeight:800, color:"#fff", display:"flex", alignItems:"center", gap:12, margin:0 }}>
+                <CheckCircle size={24} color="#16a34a" />
+                Mes Candidatures ({appliedOffers.length})
+              </h2>
+              {appliedOffers.length > 0 && (
+                <button 
+                  onClick={() => { if(window.confirm("Vider toute la liste ?")) setApplied({}); }}
+                  style={{ padding:"6px 12px", borderRadius:8, fontSize:12, cursor:"pointer", border:"1px solid #3f3f46", background:"transparent", color:"#71717a" }}
+                >
+                  Vider la liste
+                </button>
+              )}
+            </div>
+            
+            {!appliedOffers.length ? (
+              <div style={{ background:"#18181b", border:"1px solid #27272a", borderRadius:16, padding:48, textAlign:"center" }}>
+                <div style={{ fontSize:48, marginBottom:16 }}>📝</div>
+                <h3 style={{ fontSize:18, fontWeight:700, color:"#fff", marginBottom:8 }}>Aucune candidature pour le moment</h3>
+                <p style={{ fontSize:14, color:"#71717a" }}>Les offres auxquelles tu postules apparaîtront ici pour ton suivi.</p>
+              </div>
+            ) : (
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(350px, 1fr))", gap:16 }}>
+                {appliedOffers.map((o, i) => (
+                  <div key={i} style={{ background:"#18181b", border:"1px solid #16a34a", borderRadius:12, padding:16, position:"relative" }}>
+                    <div style={{ position:"absolute", top:12, right:12, background:"#052e16", color:"#4ade80", fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:20 }}>POSTULÉ</div>
+                    <div style={{ fontWeight:700, fontSize:15, color:"#fff", marginBottom:4 }}>{o.titre}</div>
+                    <div style={{ fontSize:13, color:"#a1a1aa", marginBottom:12 }}>{o.entreprise}</div>
+                    <div style={{ display:"flex", gap:10, fontSize:11, color:"#71717a", marginBottom:16 }}>
+                      <span>📍 {o.ville}</span>
+                      <span>📅 {o.date}</span>
+                    </div>
+                    <div style={{ display:"flex", gap:8 }}>
+                      {o.url && <a href={o.url} target="_blank" rel="noreferrer" style={{ flex:1, textAlign:"center", padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, textDecoration:"none", border:"1px solid #3f3f46", color:"#a1a1aa" }}>Voir l'offre</a>}
+                      <button 
+                        onClick={() => setApplied(p => { const n = {...p}; delete n[o.id]; return n; })}
+                        style={{ padding:"8px 12px", borderRadius:8, fontSize:12, cursor:"pointer", border:"1px solid #450a0a", background:"transparent", color:"#f87171" }}
+                      >
+                        Retirer
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
