@@ -634,7 +634,7 @@ Retourne UNIQUEMENT ce JSON :
     setDraftError(null);
     setEmailDraft(null);
     try {
-      const prompt = `Génère un email de prospection simple et direct pour une recherche d'alternance.
+      const prompt = `Rédige un email de prospection percutant, naturel et humain pour une recherche d'alternance.
 Destinataire : ${contact.nom} (${contact.poste}) chez ${company.name}.
 Expéditeur : Charid Youssef, étudiant en Master Business Dev & Growth Strategy à l'INSEEC Lyon (dispo Octobre 2026).
 
@@ -645,19 +645,19 @@ CONTEXTE CV & COMPÉTENCES :
 - Langues : Anglais C2, Italien Maternel, Arabe Bilingue.
 
 DIRECTIVES CRUCIALES :
-1. NE METS AUCUN ESPACE VIDE À COMPLÉTER (pas de [Nom], pas de [Date], pas de [Entreprise]).
-2. L'email doit être prêt à l'envoi tel quel.
-3. Utilise le nom du destinataire (${contact.nom}) poliment dans l'introduction.
-4. Souligne mon profil hybride : une base Marketing/Sales, une grande envie d'apprendre les Ads/SEO, et une expertise IA technique (Vibecoding, Agents, n8n) apprise en autodidacte.
-5. Précise la recherche d'alternance pour Octobre 2026.
-6. Mentionne que mon CV est joint en pièce jointe (PJ).
-7. Le ton doit être professionnel, humble mais déterminé. Évite absolument les familiarités comme "prendre un café". Propose plutôt un "entretien" ou un "échange professionnel".
-8. Termine par "Cordialement, Charid Youssef".
+1. LE TON DOIT ÊTRE NATUREL ET DIRECT. Évite les phrases bateau type "je vous propose ma candidature".
+2. NE METS AUCUN ESPACE VIDE À COMPLÉTER (pas de [Nom], pas de [Date], pas de [Entreprise]).
+3. L'email doit être prêt à l'envoi tel quel (3 paragraphes courts maximum).
+4. Utilise le nom du destinataire (${contact.nom}) poliment dans l'introduction.
+5. Souligne mon profil hybride : une base Marketing/Sales, une grande envie d'apprendre les Ads/SEO, et une expertise IA technique (Vibecoding, Agents, n8n) apprise en autodidacte.
+6. Précise la recherche d'alternance pour Octobre 2026.
+7. Mentionne que mon CV est joint en pièce jointe (PJ).
+8. Termine par "Cordialement,\\nCharid Youssef".
 
 Retourne UNIQUEMENT ce JSON :
 {"objet": "Candidature Alternance Charid Youssef", "corps": "Contenu de l'email \\n"}`;
 
-      const text = await callGemini(prompt, false); // No search needed for simple draft
+      const text = await callGemini(prompt, false, true); // No search needed for simple draft, but force JSON
       const parsed = parseJSON(text);
       setEmailDraft({ ...parsed, contact, company });
     } catch (e: any) {

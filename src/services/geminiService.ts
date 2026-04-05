@@ -13,7 +13,7 @@ function getAi() {
   return aiInstance;
 }
 
-export async function callGemini(prompt: string, useSearch = false, retryCount = 0, model = "gemini-3-flash-preview") {
+export async function callGemini(prompt: string, useSearch = false, forceJson = false, retryCount = 0, model = "gemini-3-flash-preview") {
   const timeoutPromise = new Promise((_, reject) => 
     setTimeout(() => reject(new Error("Timeout: L'API Gemini a mis trop de temps à répondre.")), 90000)
   );
@@ -24,7 +24,8 @@ export async function callGemini(prompt: string, useSearch = false, retryCount =
 
     if (useSearch) {
       config.tools = [{ googleSearch: {} }];
-    } else {
+    }
+    if (forceJson) {
       config.responseMimeType = "application/json";
     }
 
@@ -54,7 +55,7 @@ export async function callGemini(prompt: string, useSearch = false, retryCount =
     
     if (isRateLimit && model === "gemini-3-flash-preview") {
       console.log("Switching to fallback model gemini-flash-latest due to rate limit...");
-      return callGemini(prompt, useSearch, retryCount, "gemini-flash-latest");
+      return callGemini(prompt, useSearch, forceJson, retryCount, "gemini-flash-latest");
     }
 
     // More aggressive retries for Render
@@ -62,7 +63,7 @@ export async function callGemini(prompt: string, useSearch = false, retryCount =
       const delay = Math.pow(2, retryCount) * 5000 + Math.random() * 2000;
       console.log(`Rate limit hit (429), retrying in ${Math.round(delay/1000)}s... (Attempt ${retryCount + 1}/5)`);
       await new Promise(resolve => setTimeout(resolve, delay));
-      return callGemini(prompt, useSearch, retryCount + 1, model);
+      return callGemini(prompt, useSearch, forceJson, retryCount + 1, model);
     }
     
     if (isRateLimit) {
@@ -78,38 +79,45 @@ export async function callGemini(prompt: string, useSearch = false, retryCount =
 }
 
 export async function generateApplicationEmail(jobTitle: string, company: string, description: string, recruiterName?: string) {
-  const prompt = `Tu es Charid Youssef, étudiant en Master à l'INSEEC Lyon, spécialisé en Digital Marketing, E-commerce et Growth.
-Écris un email de candidature court, direct et professionnel pour une alternance chez "${company}".
+  const prompt = `Tu es Charid Youssef, étudiant en Master à l'INSEEC Lyon, spécialisé en Digital Marketing & Growth.
+Rédige un email de candidature percutant, naturel et très professionnel pour une alternance chez "${company}".
 
 ${recruiterName ? `Le destinataire est : ${recruiterName}.` : "Le destinataire est le Responsable du Recrutement."}
 
-IMPORTANT : 
-- Tu postules pour une ALTERNANCE (Octobre 2026) en Marketing Digital, Growth ou Business Development.
-- NE POSTULE PAS pour le poste de "${jobTitle}" si c'est un poste de direction (ex: CEO, Fondateur, Head of...). Dans ce cas, dis simplement que tu postules pour rejoindre l'équipe en alternance.
-- Si "${jobTitle}" semble être une offre d'alternance précise, mentionne-la.
-
 CONTEXTE DE L'OFFRE / ENTREPRISE :
 ${description}
+Poste ciblé : ${jobTitle} (Si c'est un poste de direction type CEO/Head of, ignore ce titre et postule simplement pour rejoindre l'équipe en alternance).
 
-TES POINTS FORTS :
+TES POINTS FORTS (à intégrer subtilement, sans faire "liste de courses") :
 - Étudiant en Master (INSEEC Lyon) spécialisé en Digital Marketing & Growth.
 - Passionné par l'IA appliquée au marketing (automatisation n8n, agents IA).
 - Profil hybride entre Business Development et Stratégie Growth.
 - Très motivé pour apprendre et monter en compétences sur les outils Ads (Meta/Google) et SEO.
 
-DIRECTIVES :
-1. RESTE SIMPLE ET SOBRE. Pas de mention de "levée de fonds", "licorne" ou de flatterie excessive.
-2. NE METS AUCUN ESPACE VIDE À COMPLÉTER.
-3. L'email doit être prêt à l'envoi tel quel.
+DIRECTIVES CRUCIALES :
+1. LE TON DOIT ÊTRE NATUREL, HUMAIN ET CONVAINCANT. Évite le style "lettre de motivation classique et ennuyeuse".
+2. Sois direct et va à l'essentiel (3 paragraphes courts maximum).
+3. NE METS AUCUN ESPACE VIDE À COMPLÉTER (pas de [Nom], [Date], etc.). L'email doit être prêt à l'envoi.
 4. Utilise une formule de politesse adaptée au nom du recruteur (${recruiterName || "non connu"}).
-5. Le ton doit être professionnel et déterminé.
-6. Termine par "Cordialement, Charid Youssef".
-7. Ne mets pas d'objet.
+5. Termine par "Cordialement,\\nCharid Youssef".
+6. Ne mets pas d'objet, génère UNIQUEMENT le corps de l'email en texte brut.
+7. AUCUN FORMATAGE MARKDOWN (pas de gras **, pas de titres ###). Juste du texte simple.
 
 Retourne UNIQUEMENT le corps de l'email.`;
 
-  // Use callGemini to benefit from retry logic (without search tool)
-  return callGemini(prompt, false);
+  // Use callGemini without search tool and WITHOUT forcing JSON
+  let text = await callGemini(prompt, false, false);
+  
+  // Cleanup in case Gemini still outputs an array or markdown
+  text = text.replace(/^```[a-z]*\n/i, '').replace(/\n```$/i, '');
+  if (text.startsWith('["') && text.endsWith('"]')) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) text = parsed[0];
+    } catch(e) {}
+  }
+  
+  return text.trim();
 }
 
 export function parseJSON(text: string) {
