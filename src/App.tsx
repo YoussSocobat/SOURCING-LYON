@@ -179,21 +179,38 @@ export default function App() {
       setAppStatus("❌ Aucun email valide trouvé dans le texte.");
       return;
     }
-    const newTargets = lines.map((email, i) => ({
-      id: `import-${Date.now()}-${i}`,
-      name: email.split("@")[0],
-      entreprise: "Importé",
-      secteur: "Inconnu",
-      ville: "Lyon",
-      taille: "Inconnue",
-      site: "",
-      tag: "⚡ À explorer",
-      contacts: [{
-        nom: "Responsable",
-        poste: "Recrutement",
-        emails: [{ addr: email, score: "🟡", note: "Importé manuellement" }]
-      }]
-    }));
+    const newTargets = lines.map((email, i) => {
+      const domain = email.split("@")[1];
+      const domainParts = domain.split(".");
+      let companyName = "Entreprise";
+      if (domainParts.length >= 2) {
+        companyName = domainParts[domainParts.length - 2];
+        // Capitalize first letter
+        companyName = companyName.charAt(0).toUpperCase() + companyName.slice(1);
+      }
+      
+      // Filter out common providers
+      const commonProviders = ["Gmail", "Outlook", "Hotmail", "Yahoo", "Orange", "Free", "Wanadoo", "Icloud"];
+      if (commonProviders.includes(companyName)) {
+        companyName = "Votre Entreprise";
+      }
+
+      return {
+        id: `import-${Date.now()}-${i}`,
+        name: companyName,
+        entreprise: companyName,
+        secteur: "Inconnu",
+        ville: "Lyon",
+        taille: "Inconnue",
+        site: "",
+        tag: "⚡ Importé",
+        contacts: [{
+          nom: "Responsable",
+          poste: "Recrutement",
+          emails: [{ addr: email, score: "🟡", note: "Importé manuellement" }]
+        }]
+      };
+    });
     setDynamicTargets(prev => [...newTargets, ...prev]);
     setAppStatus(`✅ ${newTargets.length} emails importés !`);
     setShowImportArea(false);
@@ -650,11 +667,12 @@ DIRECTIVES CRUCIALES :
 1. LE TON DOIT ÊTRE NATUREL ET DIRECT. Évite les phrases bateau type "je vous propose ma candidature".
 2. NE METS AUCUN ESPACE VIDE À COMPLÉTER (pas de [Nom], pas de [Date], pas de [Entreprise]).
 3. L'email doit être prêt à l'envoi tel quel (3 paragraphes courts maximum).
-4. Utilise le nom du destinataire (${contact.nom}) poliment dans l'introduction.
-5. Souligne mon profil hybride : une base Marketing/Sales, une grande envie d'apprendre les Ads/SEO, et une expertise IA technique (Vibecoding, Agents, n8n) apprise en autodidacte.
-6. Précise la recherche d'alternance pour Octobre 2026.
-7. Mentionne que mon CV est joint en pièce jointe (PJ).
-8. Termine par "Cordialement,\\nCharid Youssef".
+4. GESTION DES NOMS GÉNÉRIQUES : Si le nom du destinataire est "Responsable" ou "Recrutement", ne l'utilise pas. Commence simplement par "Bonjour,".
+5. GESTION DES ENTREPRISES GÉNÉRIQUES : Si le nom de l'entreprise est "Importé", "Inconnu" ou "Votre Entreprise", ne le mentionne pas. Parle de "votre équipe" ou "votre structure".
+6. Souligne mon profil hybride : une base Marketing/Sales, une grande envie d'apprendre les Ads/SEO, et une expertise IA technique (Vibecoding, Agents, n8n) apprise en autodidacte.
+7. Précise la recherche d'alternance pour Octobre 2026.
+8. Mentionne que mon CV est joint en pièce jointe (PJ).
+9. Termine par "Cordialement,\\nCharid Youssef".
 
 Retourne UNIQUEMENT ce JSON :
 {"objet": "Candidature Alternance Charid Youssef", "corps": "Contenu de l'email \\n"}`;
@@ -1181,8 +1199,12 @@ Retourne UNIQUEMENT ce JSON :
 
             {/* SCRAPER BUTTON */}
             <div style={{ padding:"12px 12px", borderBottom:"1px solid #27272a", display:"flex", flexDirection:"column", gap:8 }}>
-              <button onClick={scrapeEmails} disabled={loadingScrape || cooldown > 0}
-                style={{ width:"100%", padding:"10px 14px", borderRadius:10, fontWeight:700, fontSize:12, cursor:(loadingScrape || cooldown > 0)?"not-allowed":"pointer", border:"none", background:(loadingScrape || cooldown > 0)?"#27272a":"linear-gradient(135deg,#7c3aed,#4f46e5)", color:(loadingScrape || cooldown > 0)?"#71717a":"#fff", display:"flex", alignItems:"center", justifyContent:"center", gap:8, boxShadow:(loadingScrape || cooldown > 0)?"none":"0 0 18px rgba(124,58,237,0.4)" }}>
+              <div 
+                onClick={!(loadingScrape || cooldown > 0) ? scrapeEmails : undefined}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!(loadingScrape || cooldown > 0)) scrapeEmails(); } }}
+                role="button"
+                tabIndex={0}
+                style={{ width:"100%", padding:"10px 14px", borderRadius:10, fontWeight:700, fontSize:12, cursor:(loadingScrape || cooldown > 0)?"not-allowed":"pointer", border:"none", background:(loadingScrape || cooldown > 0)?"#27272a":"linear-gradient(135deg,#7c3aed,#4f46e5)", color:(loadingScrape || cooldown > 0)?"#71717a":"#fff", display:"flex", alignItems:"center", justifyContent:"center", gap:8, boxShadow:(loadingScrape || cooldown > 0)?"none":"0 0 18px rgba(124,58,237,0.4)", userSelect: "none" }}>
                 {loadingScrape ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ animation: "spin 0.8s linear infinite" }}>⟳</span>
@@ -1195,7 +1217,7 @@ Retourne UNIQUEMENT ce JSON :
                     </button>
                   </div>
                 ) : cooldown > 0 ? `Attendre ${cooldown}s` : "Scraper 15 nouveaux emails"}
-              </button>
+              </div>
               
               <div style={{ display:"flex", gap:6 }}>
                 <button onClick={selectAllSourcing}
