@@ -479,10 +479,11 @@ CONSIGNES DE QUALITÉ (CRITICAL) :
 - EXCLURE TOUTES LES ÉCOLES et centres de formation.
 - Trouve au moins 15-20 offres distinctes.
 - PRIORITÉ ABSOLUE : Trouver l'adresse email directe du recruteur ou du responsable (ex: prenom.nom@entreprise.com).
-- Si l'email n'est pas sur l'annonce, cherche sur le site de l'entreprise ou déduis-le via le nom du responsable.
+- NE PAS INVENTER D'EMAILS. Si l'email n'est pas explicitement trouvé sur l'annonce ou le site, laisse le champ vide ou cherche une autre offre.
+- VÉRIFIE CHAQUE LIEN ET CHAQUE EMAIL.
 
 Retourne UNIQUEMENT ce JSON :
-{"offres":[{"titre":"","entreprise":"","ville":"","contrat":"Alternance","salaire":"","description":"","date":"YYYY-MM-DD","url":"LIEN_DIRECT_ET_VALIDE","email":"EMAIL_DIRECT_NOMINATIF","source":"NOM_DU_SITE"}]}
+{"offres":[{"titre":"","entreprise":"","ville":"","contrat":"Alternance","salaire":"","description":"","date":"YYYY-MM-DD","url":"LIEN_DIRECT_ET_VALIDE","email":"EMAIL_DIRECT_VÉRIFIÉ","source":"NOM_DU_SITE"}]}
 `;
 
       const text = await callGemini(prompt, true);
@@ -579,10 +580,11 @@ Retourne UNIQUEMENT ce JSON :
       - NE DONNE PAS d'emails génériques (contact@, info@, hello@) SAUF si c'est la seule option après recherche intense.
       - Priorise les entreprises qui ont levé des fonds récemment ou qui sont en croissance à Lyon.
       - Vérifie que l'entreprise existe toujours.
-      - Essaie de déduire l'email si tu as le nom du décideur et le domaine (formats courants: p.nom@, prenom@, prenom.n@).
+      - NE PAS DEVINER LES EMAILS. Ne fournis que des adresses que tu as trouvées explicitement sur le web (LinkedIn, site web, annuaires).
+      - Si tu n'es pas sûr à 100% de l'email, ne l'inclus pas.
       
       Retourne UNIQUEMENT ce JSON :
-      {"contacts":[{"entreprise":"","site":"","ville":"Lyon","decideur":"Nom","poste":"Poste","email_probable":"email","email_format":"format","score":"🟢","score_label":"Fiable","source":"Source","note":"Note"}]}
+      {"contacts":[{"entreprise":"","site":"","ville":"Lyon","decideur":"Nom","poste":"Poste","email_probable":"email_verifié","email_format":"trouvé","score":"🟢","score_label":"Vérifié","source":"Source","note":"Note"}]}
       `;
       const text = await callGemini(prompt, true);
       const parsed = parseJSON(text);
